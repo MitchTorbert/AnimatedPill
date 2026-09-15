@@ -90,7 +90,7 @@
     position: absolute;
     top: calc(100% + 12px);
     left: 0;
-    width: 340px;
+    width: 200px;
     background: #18181b;
     border: 1px solid #3a3a3d;
     border-radius: 14px;
@@ -98,11 +98,12 @@
     box-shadow: 0 12px 32px rgba(0,0,0,0.5);
     z-index: 10;
   }
+  .color-popover.open-upward { top: auto; bottom: calc(100% + 12px); }
   .color-popover[hidden] { display: none; }
   .popover-group { margin-bottom: 12px; }
   .popover-group:last-child { margin-bottom: 0; }
   .popover-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #71717a; margin-bottom: 8px; }
-  .popover-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .popover-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .popover-swatch {
     aspect-ratio: 1;
     border-radius: 6px;
@@ -268,7 +269,7 @@
         const sw = document.createElement("div");
         sw.className = "popover-swatch" + (c.hex === pill.colorHex ? " selected" : "");
         sw.style.background = c.hex;
-        sw.title = c.name;
+        sw.title = c.name + " " + c.hex;
         sw.addEventListener("click", () => {
           pill.colorHex = c.hex;
           closePopover();
@@ -328,6 +329,12 @@
           openPopoverId = pill.id;
           const pop = editor.querySelector(".color-popover");
           pop.hidden = false;
+          const circleRect = circle.getBoundingClientRect();
+          const popHeight = pop.getBoundingClientRect().height;
+          const spaceBelow = window.innerHeight - circleRect.bottom;
+          const spaceAbove = circleRect.top;
+          const opensUpward = spaceBelow < popHeight + 12 && spaceAbove > spaceBelow;
+          pop.classList.toggle("open-upward", opensUpward);
         }
       });
       editor.appendChild(circle);
