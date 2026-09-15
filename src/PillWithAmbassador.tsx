@@ -7,21 +7,25 @@ export interface PillWithAmbassadorProps extends PillProps {}
 // The ambassador badge is a fixed, pre-made asset (real Twitch brand file - the
 // purple-to-cyan gradient badge + checkmark + "Ambassador" text are already baked in,
 // so nothing about its look is built here). It has no internal animation of its own -
-// it's a single rigid image, always on a layer BELOW the username pill and never
-// cropped/masked by anything - it's simply covered wherever the pill sits on top of it.
+// it's a single rigid image on a layer BELOW the username pill, covered wherever the
+// pill sits on top of it. The only clip applied is a single vertical line at the pill's
+// own LEFT edge, so it can never peek out that side - the right side (the actual reveal
+// direction) is never clipped, so what IS visible always shows the image's own natural
+// rounded cap, never a straight cropped edge.
 const AMBASSADOR_SRC = "images/ambassador-pill.png";
 const AMBASSADOR_ASPECT = 1045 / 217;
 const GAP = 48; // px between the username pill and the ambassador badge, at comp scale
 
 // Sequenced relative to the username pill's own (untouched) 0-13 entrance and 146-159
-// exit: the badge only starts sliding out once the pill has fully settled, and finishes
-// tucking away well before the pill begins collapsing - never simultaneous with it.
+// exit: the badge only starts sliding out once the pill has fully settled. Exit is
+// timed to finish right around when the pill's own exit begins - a small overlap is
+// fine, a long dead gap beforehand reads as happening too early.
 const ENTER_START = 16;
 const ENTER_DURATION = 10;
 const ENTER_END = ENTER_START + ENTER_DURATION; // 26
 const EXIT_DURATION = 10;
-const EXIT_END = 130; // comfortably before the pill's own exit starts at 146
-const EXIT_START = EXIT_END - EXIT_DURATION; // 120
+const EXIT_END = 148; // finishes just after the pill's own exit starts at 146 - slight overlap
+const EXIT_START = EXIT_END - EXIT_DURATION; // 138
 
 const SCALE_START = 0.7; // starts at 70% size, fully tucked under the pill
 
@@ -41,7 +45,7 @@ function ambassadorProgressAt(frame: number): number {
 
 export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username, colorHex }) => {
   const frame = useCurrentFrame();
-  const { width: compWidth } = useVideoConfig();
+  const { width: compWidth, height: compHeight } = useVideoConfig();
 
   // Nothing about the username pill's own math changes - same metrics function the
   // standalone Pill uses, just also read here to lay the ambassador badge out beside it.
@@ -57,11 +61,11 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
   const pairWidth = usernameRestWidth + GAP + restAmbWidth;
   const pairLeft = compWidth / 2 - pairWidth / 2;
   const usernameCenterX = pairLeft + usernameRestWidth / 2;
+  const usernameLeftEdge = pairLeft;
   const finalAmbCenterX = pairLeft + usernameRestWidth + GAP + restAmbWidth / 2;
 
-  // Starts centered directly under the pill (at 70% scale, fully tucked - no masking
-  // needed since a smaller badge centered on the pill's own center sits entirely within
-  // its footprint) and slides out to its final resting spot as it grows to 100%.
+  // Starts centered directly under the pill (at 70% scale) and slides out to its final
+  // resting spot as it grows to 100%.
   const scale = SCALE_START + (1 - SCALE_START) * progress;
   const ambWidth = restAmbWidth * scale;
   const ambHeight = REST_PILL_HEIGHT * scale;
@@ -75,19 +79,30 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
 
   return (
     <AbsoluteFill>
-      {/* Ambassador badge renders first (i.e. on a layer below, in stacking order) so the
-          username pill visually covers it while tucked underneath - no clipping at all. */}
+      {/* Ambassador badge, clipped only on the left at the pill's own edge - never on
+          the right, so the visible reveal edge is always the image's own rounded cap. */}
       {ambassadorVisible && (
-        <Img
-          src={staticFile(AMBASSADOR_SRC)}
+        <div
           style={{
             position: "absolute",
-            left: ambCenterX - ambWidth / 2,
-            top: centerY - ambHeight / 2,
-            width: ambWidth,
-            height: ambHeight,
+            left: usernameLeftEdge,
+            top: 0,
+            width: compWidth - usernameLeftEdge,
+            height: compHeight,
+            overflow: "hidden",
           }}
-        />
+        >
+          <Img
+            src={staticFile(AMBASSADOR_SRC)}
+            style={{
+              position: "absolute",
+              left: ambCenterX - ambWidth / 2 - usernameLeftEdge,
+              top: centerY - ambHeight / 2,
+              width: ambWidth,
+              height: ambHeight,
+            }}
+          />
+        </div>
       )}
       <Pill username={username} colorHex={colorHex} centerXOverride={usernameCenterX} />
     </AbsoluteFill>
