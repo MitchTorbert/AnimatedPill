@@ -1,0 +1,4 @@
+node_modules/
+*.mov
+*.zip
+.DS_Store

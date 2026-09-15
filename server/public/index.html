@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Animated Pill Generator</title>
+<style>
+  @font-face {
+    font-family: "RoobertTWITCH";
+    src: url("/fonts/RoobertTWITCH-Medium.otf");
+    font-weight: 500;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0e0e10;
+    color: #efeff1;
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  .header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; }
+  .header img { width: 32px; height: 32px; flex-shrink: 0; }
+  h1 { font-size: 19px; margin: 0; text-align: center; }
+  .sub { color: #adadb8; font-size: 13px; margin: 8px 0 44px; text-align: center; }
+
+  .pill-list { display: flex; flex-direction: column; align-items: center; gap: 28px; }
+
+  .pill-editor { position: relative; display: flex; align-items: center; gap: 14px; }
+
+  .pill-shape {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100px;
+    border-radius: 999px;
+    padding: 0 46px;
+    transition: background 0.15s ease;
+  }
+  .pill-shape input {
+    font-family: "RoobertTWITCH", sans-serif;
+    font-weight: 500;
+    font-size: 57px;
+    line-height: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 0;
+    min-width: 4px;
+  }
+  .pill-shape input::placeholder { opacity: 0.45; }
+
+  .color-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.25);
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .color-circle:hover { border-color: rgba(255,255,255,0.6); }
+
+  .remove-pill {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #26262b;
+    border: 1px solid #3a3a3d;
+    color: #adadb8;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .remove-pill:hover { border-color: #ff6b6b; color: #ff6b6b; }
+
+  .color-popover {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 0;
+    width: 340px;
+    background: #18181b;
+    border: 1px solid #3a3a3d;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    z-index: 10;
+  }
+  .color-popover[hidden] { display: none; }
+  .popover-group { margin-bottom: 12px; }
+  .popover-group:last-child { margin-bottom: 0; }
+  .popover-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #71717a; margin-bottom: 8px; }
+  .popover-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .popover-swatch {
+    aspect-ratio: 1;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .popover-swatch:hover { transform: scale(1.1); }
+  .popover-swatch.selected { border-color: #ffffff; box-shadow: 0 0 0 2px #9146FF; }
+
+  .add-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: none;
+    border: none;
+    color: #dedee3;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 8px auto 0;
+    padding: 8px;
+  }
+  .add-pill:hover { color: #9146FF; }
+  .add-pill .plus-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1.5px dashed #52525b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .add-pill:hover .plus-circle { border-color: #9146FF; border-style: solid; }
+
+  .export-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 56px;
+  }
+
+  select#exportScale {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 14px 40px 14px 22px;
+    border-radius: 999px;
+    border: 1px solid #3a3a3d;
+    background: #18181b;
+    color: #efeff1;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%23adadb8'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 18px center;
+  }
+
+  button.download {
+    padding: 15px 28px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: none;
+    background: #9146FF;
+    color: white;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.download:disabled { opacity: 0.6; cursor: default; }
+  button.download:hover:not(:disabled) { background: #7d2eff; }
+
+  .status { margin-top: 16px; font-size: 14px; color: #adadb8; text-align: right; min-height: 20px; }
+  .status.error { color: #ff6b6b; }
+  .status.success { color: #63e6be; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <img src="/assets/glitch_3d.png" alt="Twitch" />
+      <h1>Animated Pill Generator</h1>
+    </div>
+    <div class="sub">Type a username, pick a color, download RGB+alpha .mov files.</div>
+
+    <div class="pill-list" id="pillList"></div>
+
+    <button class="add-pill" id="addPillBtn">
+      <span class="plus-circle">+</span>
+      Add pill
+    </button>
+
+    <div class="export-row">
+      <select id="exportScale">
+        <option value="0.3">30%</option>
+        <option value="0.35">35%</option>
+        <option value="0.5">50%</option>
+        <option value="1">Full resolution</option>
+      </select>
+      <button class="download" id="downloadBtn">Download (1 pill)</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- hidden measurer used to auto-size each pill input as you type -->
+  <span id="measurer" style="position:absolute; visibility:hidden; white-space:pre; font-family:'RoobertTWITCH', sans-serif; font-weight:500; font-size:57px;"></span>
+
+<script>
+  let colors = [];
+  const GROUP_LABELS = ["Neutrals & Reds", "Oranges, Yellows & Greens", "Teals & Blues", "Purples & Pinks"];
+  const GROUP_SIZE = 8;
+
+  let pills = [{ id: 1, username: "", colorHex: null }];
+  let nextId = 2;
+  let openPopoverId = null;
+
+  function contrastTextColor(hex) {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.substring(0, 2), 16) / 255;
+    const g = parseInt(c.substring(2, 4), 16) / 255;
+    const b = parseInt(c.substring(4, 6), 16) / 255;
+    const lin = (v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    const lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    return lum > 0.4 ? "#000000" : "#FFFFFF";
+  }
+
+  function colorByHex(hex) {
+    return colors.find((c) => c.hex === hex) || colors[0];
+  }
+
+  function measureWidth(text) {
+    const m = document.getElementById("measurer");
+    m.textContent = text || "";
+    return m.getBoundingClientRect().width;
+  }
+
+  function updateDownloadLabel() {
+    const btn = document.getElementById("downloadBtn");
+    btn.textContent = "Download (" + pills.length + " pill" + (pills.length === 1 ? "" : "s") + ")";
+  }
+
+  function closePopover() {
+    if (openPopoverId === null) return;
+    const el = document.querySelector('.color-popover[data-for="' + openPopoverId + '"]');
+    if (el) el.hidden = true;
+    openPopoverId = null;
+  }
+
+  function renderPopoverContent(container, pill) {
+    container.innerHTML = "";
+    for (let g = 0; g < GROUP_LABELS.length; g++) {
+      const slice = colors.slice(g * GROUP_SIZE, g * GROUP_SIZE + GROUP_SIZE);
+      if (slice.length === 0) continue;
+      const groupEl = document.createElement("div");
+      groupEl.className = "popover-group";
+      const labelEl = document.createElement("div");
+      labelEl.className = "popover-group-label";
+      labelEl.textContent = GROUP_LABELS[g];
+      groupEl.appendChild(labelEl);
+      const swatchesEl = document.createElement("div");
+      swatchesEl.className = "popover-swatches";
+      slice.forEach((c) => {
+        const sw = document.createElement("div");
+        sw.className = "popover-swatch" + (c.hex === pill.colorHex ? " selected" : "");
+        sw.style.background = c.hex;
+        sw.title = c.name;
+        sw.addEventListener("click", () => {
+          pill.colorHex = c.hex;
+          closePopover();
+          renderPillList();
+        });
+        swatchesEl.appendChild(sw);
+      });
+      groupEl.appendChild(swatchesEl);
+      container.appendChild(groupEl);
+    }
+  }
+
+  function renderPillList() {
+    const list = document.getElementById("pillList");
+    list.innerHTML = "";
+
+    pills.forEach((pill) => {
+      const editor = document.createElement("div");
+      editor.className = "pill-editor";
+
+      const shape = document.createElement("div");
+      shape.className = "pill-shape";
+      shape.style.background = pill.colorHex;
+
+      const prefix = document.createElement("span");
+      prefix.textContent = "/";
+      prefix.style.color = contrastTextColor(pill.colorHex);
+      prefix.style.fontFamily = "'RoobertTWITCH', sans-serif";
+      prefix.style.fontWeight = "500";
+      prefix.style.fontSize = "57px";
+      prefix.style.lineHeight = "1";
+      shape.appendChild(prefix);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = pill.username;
+      input.placeholder = "username";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.style.color = contrastTextColor(pill.colorHex);
+      input.style.width = Math.max(20, measureWidth(pill.username || "username")) + "px";
+      input.addEventListener("input", () => {
+        pill.username = input.value;
+        input.style.width = Math.max(20, measureWidth(input.value || "username")) + "px";
+      });
+      shape.appendChild(input);
+      editor.appendChild(shape);
+
+      const circle = document.createElement("button");
+      circle.className = "color-circle";
+      circle.style.background = pill.colorHex;
+      circle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = openPopoverId === pill.id;
+        closePopover();
+        if (!isOpen) {
+          openPopoverId = pill.id;
+          const pop = editor.querySelector(".color-popover");
+          pop.hidden = false;
+        }
+      });
+      editor.appendChild(circle);
+
+      if (pills.length > 1) {
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "remove-pill";
+        removeBtn.textContent = "✕";
+        removeBtn.addEventListener("click", () => {
+          pills = pills.filter((p) => p.id !== pill.id);
+          renderPillList();
+        });
+        editor.appendChild(removeBtn);
+      }
+
+      const popover = document.createElement("div");
+      popover.className = "color-popover";
+      popover.dataset.for = pill.id;
+      popover.hidden = true;
+      popover.addEventListener("click", (e) => e.stopPropagation());
+      renderPopoverContent(popover, pill);
+      editor.appendChild(popover);
+
+      list.appendChild(editor);
+    });
+
+    updateDownloadLabel();
+  }
+
+  document.addEventListener("click", () => closePopover());
+
+  document.getElementById("addPillBtn").addEventListener("click", () => {
+    const lastColor = pills[pills.length - 1].colorHex;
+    pills.push({ id: nextId++, username: "", colorHex: lastColor });
+    renderPillList();
+  });
+
+  async function init() {
+    const res = await fetch("/api/colors");
+    colors = await res.json();
+    const defaultColor = colors.find((c) => c.name === "Black Ops") || colors[0];
+    pills[0].colorHex = defaultColor.hex;
+    renderPillList();
+  }
+
+  document.getElementById("downloadBtn").addEventListener("click", async () => {
+    const status = document.getElementById("status");
+    const btn = document.getElementById("downloadBtn");
+    const scale = parseFloat(document.getElementById("exportScale").value);
+
+    const cleaned = pills.map((p) => ({
+      username: p.username.trim(),
+      colorHex: p.colorHex,
+      colorName: colorByHex(p.colorHex).name,
+    }));
+
+    if (cleaned.some((p) => !p.username)) {
+      status.textContent = "Every pill needs a username.";
+      status.className = "status error";
+      return;
+    }
+
+    btn.disabled = true;
+    status.className = "status";
+    status.textContent = cleaned.length > 1
+      ? "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)..."
+      : "Rendering... this can take 10-30 seconds.";
+
+    try {
+      const res = await fetch("/api/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pills: cleaned, scale }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Render failed");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="(.+)"/);
+      const fallback = cleaned.length > 1
+        ? "Pills " + cleaned.slice(0, 2).map((p) => p.username).join(" ") + ".zip"
+        : cleaned[0].username + " Pill.mov";
+      const filename = match ? match[1] : fallback;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      status.textContent = "Downloaded " + filename;
+      status.className = "status success";
+    } catch (err) {
+      status.textContent = err.message || "Something went wrong.";
+      status.className = "status error";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

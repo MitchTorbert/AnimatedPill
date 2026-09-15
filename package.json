@@ -1,0 +1,29 @@
+{
+  "name": "twitch-pill-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "server": "tsx server/index.ts"
+  },
+  "dependencies": {
+    "remotion": "4.0.290",
+    "@remotion/cli": "4.0.290",
+    "@remotion/renderer": "4.0.290",
+    "@remotion/bundler": "4.0.290",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "express": "^4.21.1",
+    "archiver": "^7.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2",
+    "@types/express": "^5.0.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/node": "^22.9.0",
+    "@types/archiver": "^6.0.3"
+  }
+}

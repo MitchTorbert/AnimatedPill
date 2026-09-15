@@ -1,0 +1,152 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import os from "os";
+import archiver from "archiver";
+import { fileURLToPath } from "url";
+import { bundle } from "@remotion/bundler";
+import { renderMedia, selectComposition } from "@remotion/renderer";
+import { BRAND_COLORS } from "../src/colors";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "..");
+
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(projectRoot, "public")));
+
+let bundleLocation: string | null = null;
+
+async function getBundle(): Promise<string> {
+  if (bundleLocation) return bundleLocation;
+  console.log("Bundling Remotion project (first request only, ~10-20s)...");
+  bundleLocation = await bundle({
+    entryPoint: path.join(projectRoot, "src", "index.ts"),
+  });
+  console.log("Bundle ready.");
+  return bundleLocation;
+}
+
+// Warm the bundle at server startup so the first user render isn't slow.
+getBundle().catch((err) => console.error("Bundle warmup failed", err));
+
+app.get("/api/colors", (_req, res) => {
+  res.json(BRAND_COLORS);
+});
+
+interface PillRequest {
+  username: string;
+  colorHex: string;
+  colorName?: string;
+}
+
+function validatePill(p: unknown): PillRequest | null {
+  if (typeof p !== "object" || p === null) return null;
+  const { username, colorHex, colorName } = p as Record<string, unknown>;
+  if (typeof username !== "string" || !username.trim()) return null;
+  if (typeof colorHex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) return null;
+  return {
+    username: username.trim().replace(/^\/+/, ""),
+    colorHex,
+    colorName: typeof colorName === "string" ? colorName : undefined,
+  };
+}
+
+function fileNameFor(pill: PillRequest): string {
+  return `${pill.username} Pill ${pill.colorName ?? "Custom"}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+}
+
+async function renderOnePill(pill: PillRequest, scale: number, outputPath: string) {
+  const location = await getBundle();
+  const inputProps = { username: pill.username, colorHex: pill.colorHex };
+  const composition = await selectComposition({ serveUrl: location, id: "Pill", inputProps });
+
+  await renderMedia({
+    composition,
+    serveUrl: location,
+    codec: "prores",
+    proResProfile: "4444",
+    pixelFormat: "yuva444p10le",
+    imageFormat: "png",
+    muted: true,
+    scale,
+    outputLocation: outputPath,
+    inputProps,
+  });
+}
+
+app.post("/api/render", async (req, res) => {
+  const body = req.body ?? {};
+  const rawPills = Array.isArray(body.pills) ? body.pills : [body]; // back-compat: single {username,colorHex} body
+  const scale = typeof body.scale === "number" && body.scale > 0 && body.scale <= 1 ? body.scale : 1;
+
+  const pills: PillRequest[] = [];
+  for (const raw of rawPills) {
+    const p = validatePill(raw);
+    if (!p) {
+      res.status(400).json({ error: "Each pill needs a username and a colorHex like #9146FF" });
+      return;
+    }
+    pills.push(p);
+  }
+  if (pills.length === 0) {
+    res.status(400).json({ error: "No pills to render" });
+    return;
+  }
+
+  const tmpOutputs: string[] = [];
+  const makeTmpPath = () =>
+    path.join(os.tmpdir(), `pill-${Date.now()}-${Math.random().toString(36).slice(2)}.mov`);
+
+  try {
+    if (pills.length === 1) {
+      const outputPath = makeTmpPath();
+      tmpOutputs.push(outputPath);
+      await renderOnePill(pills[0], scale, outputPath);
+      res.download(outputPath, fileNameFor(pills[0]), (err) => {
+        fs.unlink(outputPath, () => {});
+        if (err) console.error("Download error", err);
+      });
+      return;
+    }
+
+    // Multiple pills: render each in turn, package as one zip of separate files.
+    const rendered: { path: string; name: string }[] = [];
+    for (const pill of pills) {
+      const outputPath = makeTmpPath();
+      tmpOutputs.push(outputPath);
+      await renderOnePill(pill, scale, outputPath);
+      rendered.push({ path: outputPath, name: fileNameFor(pill) });
+    }
+
+    const zipName = `Pills ${pills
+      .slice(0, 2)
+      .map((p) => p.username)
+      .join(" ")}.zip`.replace(/[/\\?%*:|"<>]/g, "-");
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", (err) => {
+      console.error("Zip error", err);
+      res.status(500).end();
+    });
+    archive.pipe(res);
+    for (const r of rendered) {
+      archive.file(r.path, { name: r.name });
+    }
+    await archive.finalize();
+    for (const t of tmpOutputs) fs.unlink(t, () => {});
+  } catch (err) {
+    console.error("Render failed", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Render failed. Check server logs." });
+    }
+    for (const t of tmpOutputs) fs.unlink(t, () => {});
+  }
+});
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4321;
+app.listen(PORT, () => {
+  console.log(`Pill generator running at http://localhost:${PORT}`);
+});
