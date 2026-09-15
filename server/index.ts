@@ -35,28 +35,34 @@ app.get("/api/colors", (_req, res) => {
   res.json(BRAND_COLOR_GROUPS);
 });
 
+// Authoritative hex -> colloquial name lookup, straight from the same palette the
+// color picker renders from - the filename never depends on the client correctly
+// tracking or sending a name alongside the hex.
+const HEX_TO_COLOR_NAME = new Map<string, string>(
+  BRAND_COLOR_GROUPS.flatMap((group) => group.colors.map((c) => [c.hex.toUpperCase(), c.name] as const))
+);
+
 interface PillRequest {
   username: string;
   colorHex: string;
-  colorName?: string;
   ambassador?: boolean;
 }
 
 function validatePill(p: unknown): PillRequest | null {
   if (typeof p !== "object" || p === null) return null;
-  const { username, colorHex, colorName, ambassador } = p as Record<string, unknown>;
+  const { username, colorHex, ambassador } = p as Record<string, unknown>;
   if (typeof username !== "string" || !username.trim()) return null;
   if (typeof colorHex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) return null;
   return {
     username: username.trim().replace(/^\/+/, ""),
     colorHex,
-    colorName: typeof colorName === "string" ? colorName : undefined,
     ambassador: ambassador === true,
   };
 }
 
 function fileNameFor(pill: PillRequest): string {
-  return `${pill.username} Pill ${pill.colorName ?? "Custom"}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+  const colorName = HEX_TO_COLOR_NAME.get(pill.colorHex.toUpperCase()) ?? "Custom";
+  return `${pill.username} Pill ${colorName}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
 async function renderOnePill(pill: PillRequest, scale: number, outputPath: string) {

@@ -408,7 +408,6 @@
     const cleaned = pills.map((p) => ({
       username: p.username.trim(),
       colorHex: p.colorHex,
-      colorName: colorByHex(p.colorHex).name,
       ambassador: !!p.ambassador,
     }));
 
