@@ -29,10 +29,9 @@
 
   .pill-list { display: flex; flex-direction: column; align-items: center; gap: 28px; }
 
-  .pill-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .pill-editor { position: relative; display: flex; align-items: center; gap: 14px; }
-  .ambassador-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #adadb8; cursor: pointer; }
-  .ambassador-toggle input { cursor: pointer; }
+  .ambassador-toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: #adadb8; cursor: pointer; white-space: nowrap; }
+  .ambassador-toggle input { cursor: pointer; width: 20px; height: 20px; }
   .ambassador-toggle:hover { color: #dedee3; }
 
   .pill-shape {
@@ -333,6 +332,18 @@
       });
       editor.appendChild(circle);
 
+      const toggleLabel = document.createElement("label");
+      toggleLabel.className = "ambassador-toggle";
+      const toggleInput = document.createElement("input");
+      toggleInput.type = "checkbox";
+      toggleInput.checked = !!pill.ambassador;
+      toggleInput.addEventListener("change", () => {
+        pill.ambassador = toggleInput.checked;
+      });
+      toggleLabel.appendChild(toggleInput);
+      toggleLabel.appendChild(document.createTextNode("Ambassador"));
+      editor.appendChild(toggleLabel);
+
       if (pills.length > 1) {
         const removeBtn = document.createElement("button");
         removeBtn.className = "remove-pill";
@@ -352,23 +363,7 @@
       renderPopoverContent(popover, pill);
       editor.appendChild(popover);
 
-      const block = document.createElement("div");
-      block.className = "pill-block";
-      block.appendChild(editor);
-
-      const toggleLabel = document.createElement("label");
-      toggleLabel.className = "ambassador-toggle";
-      const toggleInput = document.createElement("input");
-      toggleInput.type = "checkbox";
-      toggleInput.checked = !!pill.ambassador;
-      toggleInput.addEventListener("change", () => {
-        pill.ambassador = toggleInput.checked;
-      });
-      toggleLabel.appendChild(toggleInput);
-      toggleLabel.appendChild(document.createTextNode("Ambassador"));
-      block.appendChild(toggleLabel);
-
-      list.appendChild(block);
+      list.appendChild(editor);
     });
 
     updateDownloadLabel();
