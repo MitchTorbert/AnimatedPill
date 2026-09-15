@@ -16,10 +16,20 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.static(path.join(projectRoot, "public")));
 
+// In Docker, scripts/build-bundle.mjs writes here at image build time, so the
+// small always-on instance never has to do this memory-heavy step itself - it
+// only has to run the (much lighter) render step. Local dev has no prebuilt
+// bundle, so it falls back to bundling on first request, same as always.
+const PREBUILT_BUNDLE = path.join(projectRoot, "remotion-bundle");
+
 let bundleLocation: string | null = null;
 
 async function getBundle(): Promise<string> {
   if (bundleLocation) return bundleLocation;
+  if (fs.existsSync(PREBUILT_BUNDLE)) {
+    bundleLocation = PREBUILT_BUNDLE;
+    return bundleLocation;
+  }
   console.log("Bundling Remotion project (first request only, ~10-20s)...");
   bundleLocation = await bundle({
     entryPoint: path.join(projectRoot, "src", "index.ts"),

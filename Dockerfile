@@ -27,9 +27,15 @@ COPY tsconfig.json remotion.config.ts ./
 COPY src ./src
 COPY public ./public
 COPY server ./server
+COPY scripts ./scripts
 
 # Downloads Remotion's Chrome Headless Shell binary into the image
 RUN npx remotion browser ensure
+
+# Bundles once at build time instead of on every cold start - the small
+# runtime instance doesn't have the memory to do this heavy step AND render
+# at the same time (see scripts/build-bundle.mjs).
+RUN node scripts/build-bundle.mjs
 
 EXPOSE 4321
 CMD ["npx", "tsx", "server/index.ts"]
