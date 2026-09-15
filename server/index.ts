@@ -96,6 +96,12 @@ async function renderOnePill(pill: PillRequest, scale: number, outputPath: strin
     // speed on a real multi-core host - this only matters on the Docker/Linux
     // deploy target, not local macOS dev.
     chromiumOptions: { enableMultiProcessOnLinux: true },
+    // Defaults to running several render processes in parallel (half the CPU
+    // threads) to go faster, which multiplies memory use per render. On a
+    // fractional-CPU host there's little real parallelism to gain from that
+    // anyway, so keep it to one process and trade the (small) speed upside for
+    // a lot more memory headroom.
+    concurrency: 1,
   });
 }
 
