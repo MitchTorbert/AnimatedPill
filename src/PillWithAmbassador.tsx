@@ -49,7 +49,13 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
 
   // Nothing about the username pill's own math changes - same metrics function the
   // standalone Pill uses, just also read here to lay the ambassador badge out beside it.
-  const { restWidth: usernameRestWidth, curTop, curBottom } = getPillMetrics(username, frame);
+  const {
+    restWidth: usernameRestWidth,
+    curWidth: usernameCurWidth,
+    curTop,
+    curBottom,
+    curHeight: usernameCurHeight,
+  } = getPillMetrics(username, frame);
   const centerY = (curTop + curBottom) / 2;
 
   const restAmbWidth = REST_PILL_HEIGHT * AMBASSADOR_ASPECT;
@@ -61,7 +67,17 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
   const pairWidth = usernameRestWidth + GAP + restAmbWidth;
   const pairLeft = compWidth / 2 - pairWidth / 2;
   const usernameCenterX = pairLeft + usernameRestWidth / 2;
-  const usernameLeftEdge = pairLeft;
+  // The clip boundary tracks the pill's ACTUAL current edge (which shrinks inward from
+  // its resting edge while the pill itself is entering/exiting), not the resting edge -
+  // otherwise, in the brief window where the pill is narrower than resting width but the
+  // badge is still visible (its own exit overlaps the pill's exit), a clip fixed at the
+  // wider resting edge leaves a gap for the badge to peek through on the left.
+  // The pill's left cap is a semicircle (borderRadius = curHeight/2 in Pill.tsx), not a
+  // flat edge - a straight vertical clip line only touches that curve at the pill's exact
+  // vertical center, so above/below center the curve falls away to the right and leaves a
+  // crescent gap for the badge to peek through at the top/bottom corners. Insetting the
+  // line by that same radius keeps it inside the curve at every row, not just the middle.
+  const usernameCurLeftEdge = usernameCenterX - usernameCurWidth / 2 + usernameCurHeight / 2;
   const finalAmbCenterX = pairLeft + usernameRestWidth + GAP + restAmbWidth / 2;
 
   // Starts centered directly under the pill (at 70% scale) and slides out to its final
@@ -85,9 +101,9 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
         <div
           style={{
             position: "absolute",
-            left: usernameLeftEdge,
+            left: usernameCurLeftEdge,
             top: 0,
-            width: compWidth - usernameLeftEdge,
+            width: compWidth - usernameCurLeftEdge,
             height: compHeight,
             overflow: "hidden",
           }}
@@ -96,7 +112,7 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
             src={staticFile(AMBASSADOR_SRC)}
             style={{
               position: "absolute",
-              left: ambCenterX - ambWidth / 2 - usernameLeftEdge,
+              left: ambCenterX - ambWidth / 2 - usernameCurLeftEdge,
               top: centerY - ambHeight / 2,
               width: ambWidth,
               height: ambHeight,

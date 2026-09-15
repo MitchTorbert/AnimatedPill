@@ -56,8 +56,7 @@ function validatePill(p: unknown): PillRequest | null {
 }
 
 function fileNameFor(pill: PillRequest): string {
-  const suffix = pill.ambassador ? " Ambassador" : "";
-  return `${pill.username} Pill ${pill.colorName ?? "Custom"}${suffix}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+  return `${pill.username} Pill ${pill.colorName ?? "Custom"}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
 async function renderOnePill(pill: PillRequest, scale: number, outputPath: string) {
