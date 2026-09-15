@@ -1,0 +1,8 @@
+node_modules
+.git
+.DS_Store
+*.mov
+*.zip
+tools
+README.md
+Start Pill Generator.command

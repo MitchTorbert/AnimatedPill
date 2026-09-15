@@ -82,6 +82,10 @@ async function renderOnePill(pill: PillRequest, scale: number, outputPath: strin
     scale,
     outputLocation: outputPath,
     inputProps,
+    // Chrome defaults to single-process mode on Linux, which badly limits render
+    // speed on a real multi-core host - this only matters on the Docker/Linux
+    // deploy target, not local macOS dev.
+    chromiumOptions: { enableMultiProcessOnLinux: true },
   });
 }
 

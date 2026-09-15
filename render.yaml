@@ -1,0 +1,6 @@
+services:
+  - name: pill-generator
+    type: web
+    runtime: docker
+    plan: 0.5c-512mb
+    healthCheckPath: /
