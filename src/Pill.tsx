@@ -6,13 +6,17 @@ import motion from "./pill-motion.json";
 export interface PillProps {
   username: string;
   colorHex: string;
+  // Optional: lay the pill out around a horizontal center other than the comp's own
+  // midpoint (used by PillWithAmbassador.tsx to place it beside the ambassador badge).
+  // Omitted, this is pixel-identical to the standalone pill - nothing else changes.
+  centerXOverride?: number;
 }
 
 // Everything below was measured directly from a real rendered deliverable
 // ("GalaxyAUS Pill Blood.mov") by decoding its actual RGBA pixels frame-by-frame -
 // not read from the AEP or reconstructed from keyframes.
-const FONT_SIZE = 139; // calibrated against real measured text widths across 4 reference renders
-const PADDING_TOTAL = 225; // pillWidth - textWidth at rest, averaged across 4 reference renders (223-227px)
+export const FONT_SIZE = 139; // calibrated against real measured text widths across 4 reference renders
+export const PADDING_TOTAL = 225; // pillWidth - textWidth at rest, averaged across 4 reference renders (223-227px)
 // Real footage has zero text pixels before this frame (verified against the raw, unfilled
 // pixel data) - frames before it are filled with a held constant for the position math to
 // stay well-defined, but must not actually be rendered, or text appears to sit statically
@@ -33,13 +37,13 @@ const { restPillWidthPx, restTextTopY, pillWidthScale, pillTop, pillBottom, text
   textTop: number[];
 };
 
-function sample(arr: number[], frame: number): number {
+export function sample(arr: number[], frame: number): number {
   const clamped = Math.max(0, Math.min(arr.length - 1, Math.round(frame)));
   return arr[clamped];
 }
 
 let measureCanvas: HTMLCanvasElement | null = null;
-function measureText(text: string): { width: number; ascent: number } {
+export function measureText(text: string): { width: number; ascent: number } {
   if (!measureCanvas) measureCanvas = document.createElement("canvas");
   const ctx = measureCanvas.getContext("2d")!;
   ctx.font = `500 ${FONT_SIZE}px RoobertTWITCH`;
@@ -47,25 +51,37 @@ function measureText(text: string): { width: number; ascent: number } {
   return { width: m.width, ascent: m.actualBoundingBoxAscent };
 }
 
-export const Pill: React.FC<PillProps> = ({ username, colorHex }) => {
-  const frame = useCurrentFrame();
-  const { width: compWidth } = useVideoConfig();
+// Rest (fully-settled) pill height - constant regardless of username, matches the
+// hold-frame measurement (frame 13) baked into pill-motion.json.
+export const REST_PILL_HEIGHT = pillBottom[13] - pillTop[13];
 
+// Shared layout math also used by PillWithAmbassador.tsx to know where the username
+// pill will be at a given frame, so it can place the ambassador badge beside it.
+export function getPillMetrics(username: string, frame: number) {
   const label = `/${username}`;
-  const textColor = contrastTextColor(colorHex);
-
-  const { width: textWidth, ascent } = measureText(label);
+  const { width: textWidth } = measureText(label);
   const restWidth = textWidth + PADDING_TOTAL;
-
-  // --- pill background: width scales from the measured curve; height/vertical
-  // position are absolute and username-independent (constant across every
-  // reference render regardless of text length or descenders) ---
   const widthScale = sample(pillWidthScale, frame);
   const curWidth = restWidth * widthScale;
   const curTop = sample(pillTop, frame);
   const curBottom = sample(pillBottom, frame);
   const curHeight = Math.max(2, curBottom - curTop);
-  const centerX = compWidth / 2;
+  return { restWidth, curWidth, curTop, curBottom, curHeight };
+}
+
+export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride }) => {
+  const frame = useCurrentFrame();
+  const { width: compWidth } = useVideoConfig();
+
+  const label = `/${username}`;
+  const textColor = contrastTextColor(colorHex);
+  const { ascent } = measureText(label);
+
+  // --- pill background: width scales from the measured curve; height/vertical
+  // position are absolute and username-independent (constant across every
+  // reference render regardless of text length or descenders) ---
+  const { restWidth, curWidth, curTop, curBottom, curHeight } = getPillMetrics(username, frame);
+  const centerX = centerXOverride ?? compWidth / 2;
 
   // --- text: a rigid block (real font baseline via SVG, not hand-guessed CSS line-box
   // math) that slides vertically using the measured top-edge curve, clipped ONLY by the

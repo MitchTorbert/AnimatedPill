@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <title>Animated Pill Generator</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png" />
 <style>
   @font-face {
     font-family: "RoobertTWITCH";
@@ -27,7 +29,11 @@
 
   .pill-list { display: flex; flex-direction: column; align-items: center; gap: 28px; }
 
+  .pill-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .pill-editor { position: relative; display: flex; align-items: center; gap: 14px; }
+  .ambassador-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #adadb8; cursor: pointer; }
+  .ambassador-toggle input { cursor: pointer; }
+  .ambassador-toggle:hover { color: #dedee3; }
 
   .pill-shape {
     position: relative;
@@ -208,11 +214,10 @@
   <span id="measurer" style="position:absolute; visibility:hidden; white-space:pre; font-family:'RoobertTWITCH', sans-serif; font-weight:500; font-size:57px;"></span>
 
 <script>
-  let colors = [];
-  const GROUP_LABELS = ["Neutrals & Reds", "Oranges, Yellows & Greens", "Teals & Blues", "Purples & Pinks"];
-  const GROUP_SIZE = 8;
+  let colorGroups = []; // [{label, colors:[{name,hex}]}]
+  let colors = []; // flat, for lookups
 
-  let pills = [{ id: 1, username: "", colorHex: null }];
+  let pills = [{ id: 1, username: "", colorHex: null, ambassador: false }];
   let nextId = 2;
   let openPopoverId = null;
 
@@ -250,18 +255,17 @@
 
   function renderPopoverContent(container, pill) {
     container.innerHTML = "";
-    for (let g = 0; g < GROUP_LABELS.length; g++) {
-      const slice = colors.slice(g * GROUP_SIZE, g * GROUP_SIZE + GROUP_SIZE);
-      if (slice.length === 0) continue;
+    colorGroups.forEach((group) => {
+      if (group.colors.length === 0) return;
       const groupEl = document.createElement("div");
       groupEl.className = "popover-group";
       const labelEl = document.createElement("div");
       labelEl.className = "popover-group-label";
-      labelEl.textContent = GROUP_LABELS[g];
+      labelEl.textContent = group.label;
       groupEl.appendChild(labelEl);
       const swatchesEl = document.createElement("div");
       swatchesEl.className = "popover-swatches";
-      slice.forEach((c) => {
+      group.colors.forEach((c) => {
         const sw = document.createElement("div");
         sw.className = "popover-swatch" + (c.hex === pill.colorHex ? " selected" : "");
         sw.style.background = c.hex;
@@ -275,7 +279,7 @@
       });
       groupEl.appendChild(swatchesEl);
       container.appendChild(groupEl);
-    }
+    });
   }
 
   function renderPillList() {
@@ -348,7 +352,23 @@
       renderPopoverContent(popover, pill);
       editor.appendChild(popover);
 
-      list.appendChild(editor);
+      const block = document.createElement("div");
+      block.className = "pill-block";
+      block.appendChild(editor);
+
+      const toggleLabel = document.createElement("label");
+      toggleLabel.className = "ambassador-toggle";
+      const toggleInput = document.createElement("input");
+      toggleInput.type = "checkbox";
+      toggleInput.checked = !!pill.ambassador;
+      toggleInput.addEventListener("change", () => {
+        pill.ambassador = toggleInput.checked;
+      });
+      toggleLabel.appendChild(toggleInput);
+      toggleLabel.appendChild(document.createTextNode("Ambassador"));
+      block.appendChild(toggleLabel);
+
+      list.appendChild(block);
     });
 
     updateDownloadLabel();
@@ -358,13 +378,14 @@
 
   document.getElementById("addPillBtn").addEventListener("click", () => {
     const lastColor = pills[pills.length - 1].colorHex;
-    pills.push({ id: nextId++, username: "", colorHex: lastColor });
+    pills.push({ id: nextId++, username: "", colorHex: lastColor, ambassador: false });
     renderPillList();
   });
 
   async function init() {
     const res = await fetch("/api/colors");
-    colors = await res.json();
+    colorGroups = await res.json();
+    colors = colorGroups.flatMap((g) => g.colors);
     const defaultColor = colors.find((c) => c.name === "Black Ops") || colors[0];
     pills[0].colorHex = defaultColor.hex;
     renderPillList();
@@ -379,6 +400,7 @@
       username: p.username.trim(),
       colorHex: p.colorHex,
       colorName: colorByHex(p.colorHex).name,
+      ambassador: !!p.ambassador,
     }));
 
     if (cleaned.some((p) => !p.username)) {

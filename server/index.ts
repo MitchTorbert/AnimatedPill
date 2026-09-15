@@ -6,7 +6,7 @@ import archiver from "archiver";
 import { fileURLToPath } from "url";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
-import { BRAND_COLORS } from "../src/colors";
+import { BRAND_COLOR_GROUPS } from "../src/colors";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -32,35 +32,39 @@ async function getBundle(): Promise<string> {
 getBundle().catch((err) => console.error("Bundle warmup failed", err));
 
 app.get("/api/colors", (_req, res) => {
-  res.json(BRAND_COLORS);
+  res.json(BRAND_COLOR_GROUPS);
 });
 
 interface PillRequest {
   username: string;
   colorHex: string;
   colorName?: string;
+  ambassador?: boolean;
 }
 
 function validatePill(p: unknown): PillRequest | null {
   if (typeof p !== "object" || p === null) return null;
-  const { username, colorHex, colorName } = p as Record<string, unknown>;
+  const { username, colorHex, colorName, ambassador } = p as Record<string, unknown>;
   if (typeof username !== "string" || !username.trim()) return null;
   if (typeof colorHex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) return null;
   return {
     username: username.trim().replace(/^\/+/, ""),
     colorHex,
     colorName: typeof colorName === "string" ? colorName : undefined,
+    ambassador: ambassador === true,
   };
 }
 
 function fileNameFor(pill: PillRequest): string {
-  return `${pill.username} Pill ${pill.colorName ?? "Custom"}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+  const suffix = pill.ambassador ? " Ambassador" : "";
+  return `${pill.username} Pill ${pill.colorName ?? "Custom"}${suffix}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
 async function renderOnePill(pill: PillRequest, scale: number, outputPath: string) {
   const location = await getBundle();
   const inputProps = { username: pill.username, colorHex: pill.colorHex };
-  const composition = await selectComposition({ serveUrl: location, id: "Pill", inputProps });
+  const compositionId = pill.ambassador ? "PillWithAmbassador" : "Pill";
+  const composition = await selectComposition({ serveUrl: location, id: compositionId, inputProps });
 
   await renderMedia({
     composition,
