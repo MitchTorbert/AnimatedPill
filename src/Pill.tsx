@@ -10,7 +10,18 @@ export interface PillProps {
   // midpoint (used by PillWithAmbassador.tsx to place it beside the ambassador badge).
   // Omitted, this is pixel-identical to the standalone pill - nothing else changes.
   centerXOverride?: number;
+  // Optional export frame rate (23.976/30/60). Every measured curve below and every
+  // frame-number constant is authored against the original 30fps reference footage -
+  // components convert their own useVideoConfig().fps into a "reference frame" via
+  // REFERENCE_FPS before touching any of it, so this prop only affects Root.tsx's
+  // calculateMetadata (which sets the real fps/duration); components never read it
+  // directly. Omitted, this is pixel-identical to a plain 30fps render.
+  fps?: number;
 }
+
+// Every measured curve in pill-motion.json and every frame-number constant in this
+// file were captured against a 30fps reference render - see REFERENCE_FPS below.
+export const REFERENCE_FPS = 30;
 
 // Everything below was measured directly from a real rendered deliverable
 // ("GalaxyAUS Pill Blood.mov") by decoding its actual RGBA pixels frame-by-frame -
@@ -37,9 +48,16 @@ const { restPillWidthPx, restTextTopY, pillWidthScale, pillTop, pillBottom, text
   textTop: number[];
 };
 
+// Linearly interpolates between the two nearest measured samples. At 30fps `frame`
+// is always a whole number, so this reduces to an exact lookup (byte-identical to
+// the old nearest-neighbor version) - it only actually interpolates for the
+// in-between reference-frame positions that 60fps/23.976fps land on.
 export function sample(arr: number[], frame: number): number {
-  const clamped = Math.max(0, Math.min(arr.length - 1, Math.round(frame)));
-  return arr[clamped];
+  const clamped = Math.max(0, Math.min(arr.length - 1, frame));
+  const lower = Math.floor(clamped);
+  const upper = Math.min(arr.length - 1, lower + 1);
+  const t = clamped - lower;
+  return arr[lower] + (arr[upper] - arr[lower]) * t;
 }
 
 let measureCanvas: HTMLCanvasElement | null = null;
@@ -71,7 +89,12 @@ export function getPillMetrics(username: string, frame: number) {
 
 export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride }) => {
   const frame = useCurrentFrame();
-  const { width: compWidth } = useVideoConfig();
+  const { width: compWidth, fps } = useVideoConfig();
+  // Every measured curve and frame-number constant below is authored against the
+  // 30fps reference footage - converting the actual playback frame into that
+  // reference timeline is the one change needed to support other export frame
+  // rates. At 30fps this is just `frame` unchanged.
+  const refFrame = (frame * REFERENCE_FPS) / fps;
 
   const label = `/${username}`;
   const textColor = contrastTextColor(colorHex);
@@ -80,7 +103,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   // --- pill background: width scales from the measured curve; height/vertical
   // position are absolute and username-independent (constant across every
   // reference render regardless of text length or descenders) ---
-  const { restWidth, curWidth, curTop, curBottom, curHeight } = getPillMetrics(username, frame);
+  const { restWidth, curWidth, curTop, curBottom, curHeight } = getPillMetrics(username, refFrame);
   const centerX = centerXOverride ?? compWidth / 2;
 
   // --- text: a rigid block (real font baseline via SVG, not hand-guessed CSS line-box
@@ -97,17 +120,17 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   const lastRealDelta =
     sample(textTop, LAST_RELIABLE_TEXT_FRAME) - sample(textTop, LAST_RELIABLE_TEXT_FRAME - 1);
   const EXIT_ACCELERATION = 1.75;
-  const framesPastReliable = Math.max(0, frame - LAST_RELIABLE_TEXT_FRAME);
-  let lateExtrapolation = 0;
-  let compoundingDelta = lastRealDelta;
-  for (let i = 0; i < framesPastReliable; i++) {
-    compoundingDelta *= EXIT_ACCELERATION;
-    lateExtrapolation += compoundingDelta;
-  }
+  const framesPastReliable = Math.max(0, refFrame - LAST_RELIABLE_TEXT_FRAME);
+  // Closed-form geometric sum of lastRealDelta*(ACCEL^1 + ACCEL^2 + ... + ACCEL^n) -
+  // equivalent to compounding a loop n times, but also well-defined for the
+  // fractional n that 60fps/23.976fps reference-frame math produces.
+  const lateExtrapolation =
+    (lastRealDelta * EXIT_ACCELERATION * (Math.pow(EXIT_ACCELERATION, framesPastReliable) - 1)) /
+    (EXIT_ACCELERATION - 1);
   const trackedTextTop =
-    frame > LAST_RELIABLE_TEXT_FRAME
+    refFrame > LAST_RELIABLE_TEXT_FRAME
       ? sample(textTop, LAST_RELIABLE_TEXT_FRAME) + lateExtrapolation
-      : sample(textTop, frame);
+      : sample(textTop, refFrame);
   const slideDelta = trackedTextTop - restTextTopY;
   const baselineY = restBaselineY + slideDelta;
 
@@ -138,7 +161,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
           overflow: "hidden",
         }}
       >
-        {frame >= FIRST_TEXT_FRAME && (
+        {refFrame >= FIRST_TEXT_FRAME && (
           <svg
             style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
             width={curWidth}

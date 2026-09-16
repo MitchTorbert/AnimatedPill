@@ -45,12 +45,27 @@ app.get("/api/colors", (_req, res) => {
   res.json(BRAND_COLOR_GROUPS);
 });
 
-// Authoritative hex -> colloquial name lookup, straight from the same palette the
-// color picker renders from - the filename never depends on the client correctly
-// tracking or sending a name alongside the hex.
+// Authoritative hex -> export-filename name lookup, straight from the same palette
+// the color picker renders from. This is deliberately NOT each swatch's own brand
+// name (e.g. "Barrel", "Linc") - those stay as the picker's hover names - but a
+// generic Light/Pastel/[hue]/Dark label built from each color's position within its
+// hue group (light-to-dark, per colors.ts), so filenames read like plain color
+// descriptions. "Neon" replaces "Light" only for Green/Blue's brightest swatch,
+// which is the only pair that actually reads as neon rather than pastel.
+const POSITION_MODIFIERS = ["Light", "Pastel", "", "Dark"];
+const NEON_GROUPS = new Set(["Green", "Blue"]);
+
 const HEX_TO_COLOR_NAME = new Map<string, string>(
-  BRAND_COLOR_GROUPS.flatMap((group) => group.colors.map((c) => [c.hex.toUpperCase(), c.name] as const))
+  BRAND_COLOR_GROUPS.flatMap((group) =>
+    group.colors.map((c, i) => {
+      const modifier = i === 0 && NEON_GROUPS.has(group.label) ? "Neon" : POSITION_MODIFIERS[i];
+      const name = modifier ? `${modifier} ${group.label}` : group.label;
+      return [c.hex.toUpperCase(), name] as const;
+    })
+  )
 );
+
+const ALLOWED_FPS = [23.976, 30, 60];
 
 interface PillRequest {
   username: string;
@@ -75,9 +90,9 @@ function fileNameFor(pill: PillRequest): string {
   return `${pill.username} Pill ${colorName}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
-async function renderOnePill(pill: PillRequest, scale: number, outputPath: string) {
+async function renderOnePill(pill: PillRequest, scale: number, fps: number, outputPath: string) {
   const location = await getBundle();
-  const inputProps = { username: pill.username, colorHex: pill.colorHex };
+  const inputProps = { username: pill.username, colorHex: pill.colorHex, fps };
   const compositionId = pill.ambassador ? "PillWithAmbassador" : "Pill";
   const composition = await selectComposition({ serveUrl: location, id: compositionId, inputProps });
 
@@ -109,6 +124,7 @@ app.post("/api/render", async (req, res) => {
   const body = req.body ?? {};
   const rawPills = Array.isArray(body.pills) ? body.pills : [body]; // back-compat: single {username,colorHex} body
   const scale = typeof body.scale === "number" && body.scale > 0 && body.scale <= 1 ? body.scale : 1;
+  const fps = ALLOWED_FPS.includes(body.fps) ? body.fps : 30;
 
   const pills: PillRequest[] = [];
   for (const raw of rawPills) {
@@ -132,7 +148,7 @@ app.post("/api/render", async (req, res) => {
     if (pills.length === 1) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pills[0], scale, outputPath);
+      await renderOnePill(pills[0], scale, fps, outputPath);
       res.download(outputPath, fileNameFor(pills[0]), (err) => {
         fs.unlink(outputPath, () => {});
         if (err) console.error("Download error", err);
@@ -145,7 +161,7 @@ app.post("/api/render", async (req, res) => {
     for (const pill of pills) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pill, scale, outputPath);
+      await renderOnePill(pill, scale, fps, outputPath);
       rendered.push({ path: outputPath, name: fileNameFor(pill) });
     }
 

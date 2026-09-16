@@ -150,7 +150,9 @@
     margin-top: 56px;
   }
 
-  select#exportScale {
+  .export-selects { display: flex; gap: 10px; }
+
+  .pill-select {
     font-size: 14px;
     font-weight: 600;
     padding: 14px 40px 14px 22px;
@@ -165,6 +167,36 @@
     background-repeat: no-repeat;
     background-position: right 18px center;
   }
+
+  .list-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 8px auto 0; }
+  .text-link-btn {
+    background: none;
+    border: none;
+    color: #adadb8;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px;
+  }
+  .text-link-btn:hover { color: #ff6b6b; }
+
+  .popover-apply-all {
+    display: block;
+    width: 100%;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #3a3a3d;
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    color: #adadb8;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+  }
+  .popover-apply-all:hover { color: #9146FF; }
 
   button.download {
     padding: 15px 28px;
@@ -200,13 +232,24 @@
       Add pill
     </button>
 
+    <div class="list-actions">
+      <button class="text-link-btn" id="clearAllBtn">Clear all</button>
+    </div>
+
     <div class="export-row">
-      <select id="exportScale">
-        <option value="0.3">30%</option>
-        <option value="0.35">35%</option>
-        <option value="0.5">50%</option>
-        <option value="1">Full resolution</option>
-      </select>
+      <div class="export-selects">
+        <select id="exportScale" class="pill-select">
+          <option value="0.3">30%</option>
+          <option value="0.35">35%</option>
+          <option value="0.5">50%</option>
+          <option value="1">Full resolution</option>
+        </select>
+        <select id="exportFps" class="pill-select">
+          <option value="23.976">23.98 fps</option>
+          <option value="30" selected>30 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </div>
       <button class="download" id="downloadBtn">Download (1 pill)</button>
     </div>
     <div class="status" id="status"></div>
@@ -282,6 +325,16 @@
       groupEl.appendChild(swatchesEl);
       container.appendChild(groupEl);
     });
+
+    const applyAllBtn = document.createElement("button");
+    applyAllBtn.className = "popover-apply-all";
+    applyAllBtn.textContent = "Apply this color to all pills";
+    applyAllBtn.addEventListener("click", () => {
+      pills.forEach((p) => { p.colorHex = pill.colorHex; });
+      closePopover();
+      renderPillList();
+    });
+    container.appendChild(applyAllBtn);
   }
 
   function renderPillList() {
@@ -391,6 +444,10 @@
     renderPillList();
   });
 
+  document.getElementById("clearAllBtn").addEventListener("click", () => {
+    location.reload();
+  });
+
   async function init() {
     const res = await fetch("/api/colors");
     colorGroups = await res.json();
@@ -404,6 +461,7 @@
     const status = document.getElementById("status");
     const btn = document.getElementById("downloadBtn");
     const scale = parseFloat(document.getElementById("exportScale").value);
+    const fps = parseFloat(document.getElementById("exportFps").value);
 
     const cleaned = pills.map((p) => ({
       username: p.username.trim(),
@@ -427,7 +485,7 @@
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pills: cleaned, scale }),
+        body: JSON.stringify({ pills: cleaned, scale, fps }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Easing, Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { Pill, PillProps, getPillMetrics, REST_PILL_HEIGHT } from "./Pill";
+import { Pill, PillProps, getPillMetrics, REST_PILL_HEIGHT, REFERENCE_FPS } from "./Pill";
 
 export interface PillWithAmbassadorProps extends PillProps {}
 
@@ -35,17 +35,21 @@ const SCALE_START = 0.7; // starts at 70% size, fully tucked under the pill
 // similar-looking curve.
 const ease = Easing.out(Easing.cubic);
 
-function ambassadorProgressAt(frame: number): number {
-  if (frame < ENTER_START) return 0;
-  if (frame < ENTER_END) return ease((frame - ENTER_START) / ENTER_DURATION);
-  if (frame < EXIT_START) return 1;
-  if (frame < EXIT_END) return ease(1 - (frame - EXIT_START) / EXIT_DURATION);
+// All frame-number constants above are authored against the 30fps reference
+// timeline, so this expects a reference frame (see refFrame below), not the
+// composition's own raw playback frame.
+function ambassadorProgressAt(refFrame: number): number {
+  if (refFrame < ENTER_START) return 0;
+  if (refFrame < ENTER_END) return ease((refFrame - ENTER_START) / ENTER_DURATION);
+  if (refFrame < EXIT_START) return 1;
+  if (refFrame < EXIT_END) return ease(1 - (refFrame - EXIT_START) / EXIT_DURATION);
   return 0;
 }
 
 export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username, colorHex }) => {
   const frame = useCurrentFrame();
-  const { width: compWidth, height: compHeight } = useVideoConfig();
+  const { width: compWidth, height: compHeight, fps } = useVideoConfig();
+  const refFrame = (frame * REFERENCE_FPS) / fps;
 
   // Nothing about the username pill's own math changes - same metrics function the
   // standalone Pill uses, just also read here to lay the ambassador badge out beside it.
@@ -55,11 +59,11 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
     curTop,
     curBottom,
     curHeight: usernameCurHeight,
-  } = getPillMetrics(username, frame);
+  } = getPillMetrics(username, refFrame);
   const centerY = (curTop + curBottom) / 2;
 
   const restAmbWidth = REST_PILL_HEIGHT * AMBASSADOR_ASPECT;
-  const progress = ambassadorProgressAt(frame);
+  const progress = ambassadorProgressAt(refFrame);
 
   // The pair (username pill + gap + ambassador, at their RESTING sizes) is centered as a
   // unit in the wide canvas - each element still grows from its own center, matching how
@@ -91,7 +95,7 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
   // otherwise mean sitting statically at 70% scale forever - fine while the pill is there
   // to cover it, but it'd be left exposed, floating alone, once the pill's own (separate,
   // untouched) exit collapses away later in the timeline.
-  const ambassadorVisible = frame >= ENTER_START && frame <= EXIT_END;
+  const ambassadorVisible = refFrame >= ENTER_START && refFrame <= EXIT_END;
 
   return (
     <AbsoluteFill>
