@@ -307,6 +307,12 @@
     return lum > 0.4 ? "#000000" : "#FFFFFF";
   }
 
+  // Small cushion beyond the exact measured width - a hidden <span> and a real
+  // <input> don't always rasterize text at identically the same width (kerning/
+  // hinting can differ slightly), and an input even 1px too narrow for its own
+  // content will horizontally clip/scroll it rather than just wrapping.
+  const WIDTH_BUFFER = 6;
+
   function measureWidth(text) {
     const m = document.getElementById("measurer");
     m.textContent = text || "";
@@ -417,7 +423,7 @@
       input.spellcheck = false;
       input.dataset.pillId = pill.id;
       input.style.color = contrastTextColor(pill.colorHex);
-      input.style.width = Math.max(20, measureWidth(pill.username || "username")) + "px";
+      input.style.width = Math.max(20, measureWidth(pill.username || "username") + WIDTH_BUFFER) + "px";
 
       // Ghost hint: shows grayed-out "username" right after the slash, for a pill
       // that's still just "/" - not real placeholder text (the input already has
@@ -437,7 +443,7 @@
 
       input.addEventListener("input", () => {
         pill.username = input.value;
-        input.style.width = Math.max(20, measureWidth(input.value || "username")) + "px";
+        input.style.width = Math.max(20, measureWidth(input.value || "username") + WIDTH_BUFFER) + "px";
         updateHint();
       });
       input.addEventListener("keydown", (e) => {
@@ -558,7 +564,45 @@
     colors = colorGroups.flatMap((g) => g.colors);
     const defaultColor = colors.find((c) => c.name === "Black Ops") || colors[0];
     pills[0].colorHex = defaultColor.hex;
+    // Wait for the real custom font before the very first width measurement -
+    // otherwise that first measureWidth() call (for the initial "/") silently
+    // falls back to a system font while RoobertTWITCH is still downloading,
+    // sizing the input too narrow and clipping the glyph horizontally until
+    // typing triggers a fresh (by-then-correct) measurement.
+    await document.fonts.load('500 57px "RoobertTWITCH"').catch(() => {});
     renderPillList();
+  }
+
+  // Individual files package into one zip themselves once there are enough of
+  // them that a pile of separate downloads gets unwieldy - below that, getting
+  // each pill as its own plain file (no unzipping step) is more convenient.
+  const ZIP_THRESHOLD = 4;
+
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function renderRequest(pills, scale, fps, fileType) {
+    const res = await fetch("/api/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pills, scale, fps, fileType }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Render failed");
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="(.+)"/);
+    return { blob, filename: match ? match[1] : null };
   }
 
   document.getElementById("downloadBtn").addEventListener("click", async () => {
@@ -582,38 +626,34 @@
 
     btn.disabled = true;
     status.className = "status";
-    status.textContent = cleaned.length > 1
-      ? "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)..."
-      : "Rendering... this can take 10-30 seconds.";
 
     try {
-      const res = await fetch("/api/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pills: cleaned, scale, fps, fileType }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Render failed");
+      if (cleaned.length >= ZIP_THRESHOLD) {
+        status.textContent = "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)...";
+        const { blob, filename } = await renderRequest(cleaned, scale, fps, fileType);
+        const fallback = "Pills " + cleaned.slice(0, 2).map((p) => p.username).join(" ") + ".zip";
+        triggerDownload(blob, filename || fallback);
+        status.textContent = "Downloaded " + (filename || fallback);
+      } else {
+        // Each pill is its own request/response/download - a plain file per
+        // pill, no zip step, for the common small-batch case.
+        for (let i = 0; i < cleaned.length; i++) {
+          status.textContent = cleaned.length > 1
+            ? "Rendering pill " + (i + 1) + " of " + cleaned.length + "..."
+            : "Rendering... this can take 10-30 seconds.";
+          const pill = cleaned[i];
+          const { blob, filename } = await renderRequest([pill], scale, fps, fileType);
+          const fallback = pill.username + " Pill." + fileType;
+          triggerDownload(blob, filename || fallback);
+          // A small gap between triggered downloads - firing several a.click()
+          // downloads back to back in the same tick is what makes browsers
+          // treat them as popup-style spam and block the later ones.
+          if (i < cleaned.length - 1) await new Promise((r) => setTimeout(r, 400));
+        }
+        status.textContent = cleaned.length > 1
+          ? "Downloaded " + cleaned.length + " files"
+          : "Downloaded " + (cleaned[0].username + " Pill." + fileType);
       }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="(.+)"/);
-      const fallback = cleaned.length > 1
-        ? "Pills " + cleaned.slice(0, 2).map((p) => p.username).join(" ") + ".zip"
-        : cleaned[0].username + " Pill." + fileType;
-      const filename = match ? match[1] : fallback;
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
-      status.textContent = "Downloaded " + filename;
       status.className = "status success";
     } catch (err) {
       status.textContent = err.message || "Something went wrong.";
