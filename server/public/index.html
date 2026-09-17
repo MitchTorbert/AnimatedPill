@@ -48,9 +48,14 @@
     font-family: "RoobertTWITCH", sans-serif;
     font-weight: 500;
     font-size: 57px;
-    line-height: 1;
+    /* A line-height tight to the font size (1) can clip a tall glyph like "/" in
+       some browsers' native <input> text rendering, which doesn't always give a
+       custom font's real ascent/descent the same room a plain <div> would -
+       matching the pill's own full height instead gives it plenty of margin. */
+    line-height: 100px;
   }
   .pill-shape input {
+    height: 100px;
     border: none;
     outline: none;
     background: transparent;

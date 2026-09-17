@@ -1,6 +1,6 @@
 import React from "react";
 import { CalculateMetadataFunction, Composition, staticFile, loadFont } from "remotion";
-import { Pill, PillProps, measureText, PADDING_TOTAL, REST_PILL_HEIGHT } from "./Pill";
+import { Pill, PillProps, measureText, PADDING_TOTAL, REST_PILL_HEIGHT, MAX_VERTICAL_OVERSHOOT } from "./Pill";
 import { PillWithAmbassador, PillWithAmbassadorProps, AMBASSADOR_ASPECT, GAP } from "./PillWithAmbassador";
 
 export const FPS = 30;
@@ -11,9 +11,13 @@ export const DURATION_IN_FRAMES = 180; // 6s: 50f in, 90f hold, 40f out
 export const COMP_WIDTH = 2500;
 export const COMP_HEIGHT = 1080;
 export const AMBASSADOR_COMP_WIDTH = 4000;
-// Small safety margin around the pill's own rest-size bounding box, mainly so
-// the anti-aliased edge of its rounded corners never has a chance to clip.
-const CROP_MARGIN = 12;
+// Margin applied to all 4 sides equally, so the settled (resting) pill always
+// stays centered in the canvas rather than being pushed off-center toward
+// whichever edge needed more room. MAX_VERTICAL_OVERSHOOT covers the pill's
+// own real entrance-animation overshoot (it doesn't overshoot horizontally -
+// verified against the measured data), plus a small fixed buffer so the
+// anti-aliased edge of its rounded corners never has a chance to clip either.
+const MARGIN = MAX_VERTICAL_OVERSHOOT + 8;
 // Export scale options are 0.3/0.35/0.5/1 - width/height need to stay a whole
 // number of pixels after multiplying by any of those, or Remotion's stitcher
 // rejects the render outright ("height must be an integer, but is 82.5", from
@@ -35,15 +39,15 @@ const calculateMetadata: CalculateMetadataFunction<PillProps> = ({ props, compos
 
   const { width: textWidth } = measureText(props.username ?? "");
   const restWidth = textWidth + PADDING_TOTAL;
-  const height = roundUpToGrid(Math.ceil(REST_PILL_HEIGHT) + CROP_MARGIN * 2);
+  const height = roundUpToGrid(Math.ceil(REST_PILL_HEIGHT) + MARGIN * 2);
 
   if (compositionId === "PillWithAmbassador") {
     const restAmbWidth = REST_PILL_HEIGHT * AMBASSADOR_ASPECT;
     const pairWidth = restWidth + GAP + restAmbWidth;
-    return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(pairWidth) + CROP_MARGIN * 2), height };
+    return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(pairWidth) + MARGIN * 2), height };
   }
 
-  return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(restWidth) + CROP_MARGIN * 2), height };
+  return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(restWidth) + MARGIN * 2), height };
 };
 
 export const RemotionRoot: React.FC = () => {

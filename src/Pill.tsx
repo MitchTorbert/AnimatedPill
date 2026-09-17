@@ -78,6 +78,15 @@ export const REST_PILL_HEIGHT = pillBottom[13] - pillTop[13];
 // instead of a fixed 1080px-tall one, so every component re-centers using this
 // rest-frame center point against whatever height it actually got.
 export const REST_PILL_CENTER_Y = (pillTop[13] + pillBottom[13]) / 2;
+// The pill briefly overshoots its own resting edges during the early "sliver"
+// phase of the entrance animation (frame ~4, measured in the real reference
+// footage, not a bug) - Root.tsx needs the true max deviation from rest, in
+// either direction, to size the export canvas without clipping it.
+export const MAX_VERTICAL_OVERSHOOT = Math.max(
+  0,
+  ...pillTop.map((t) => pillTop[13] - t),
+  ...pillBottom.map((b) => b - pillBottom[13])
+);
 
 // Shared layout math also used by PillWithAmbassador.tsx to know where the username
 // pill will be at a given frame, so it can place the ambassador badge beside it.
