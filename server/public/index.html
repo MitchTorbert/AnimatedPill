@@ -198,6 +198,22 @@
   }
   .popover-apply-all:hover { color: #9146FF; }
 
+  .popover-custom { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .popover-custom span { font-size: 12px; font-weight: 600; color: #71717a; white-space: nowrap; }
+  .popover-custom input {
+    flex: 1;
+    min-width: 0;
+    background: #0e0e10;
+    border: 1px solid #3a3a3d;
+    border-radius: 6px;
+    color: #efeff1;
+    font-size: 13px;
+    padding: 6px 8px;
+    font-family: monospace;
+  }
+  .popover-custom input:focus { outline: none; border-color: #9146FF; }
+  .popover-custom input.invalid { border-color: #ff6b6b; }
+
   button.download {
     padding: 15px 28px;
     font-size: 15px;
@@ -262,7 +278,7 @@
   let colorGroups = []; // [{label, colors:[{name,hex}]}]
   let colors = []; // flat, for lookups
 
-  let pills = [{ id: 1, username: "", colorHex: null, ambassador: false }];
+  let pills = [{ id: 1, username: "/", colorHex: null, ambassador: false }];
   let nextId = 2;
   let openPopoverId = null;
 
@@ -274,10 +290,6 @@
     const lin = (v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
     const lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
     return lum > 0.4 ? "#000000" : "#FFFFFF";
-  }
-
-  function colorByHex(hex) {
-    return colors.find((c) => c.hex === hex) || colors[0];
   }
 
   function measureWidth(text) {
@@ -335,6 +347,36 @@
       renderPillList();
     });
     container.appendChild(applyAllBtn);
+
+    // For the rare outside-initiative pill that needs a non-brand color.
+    const customWrap = document.createElement("div");
+    customWrap.className = "popover-custom";
+    const customLabel = document.createElement("span");
+    customLabel.textContent = "Custom:";
+    customWrap.appendChild(customLabel);
+    const customInput = document.createElement("input");
+    customInput.type = "text";
+    customInput.placeholder = "#RRGGBB";
+    customInput.maxLength = 7;
+    const applyCustomHex = () => {
+      let v = customInput.value.trim();
+      if (!v.startsWith("#")) v = "#" + v;
+      if (!/^#[0-9a-fA-F]{6}$/.test(v)) {
+        customInput.classList.add("invalid");
+        return;
+      }
+      pill.colorHex = v.toUpperCase();
+      closePopover();
+      renderPillList();
+    };
+    customInput.addEventListener("input", () => customInput.classList.remove("invalid"));
+    customInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      applyCustomHex();
+    });
+    customWrap.appendChild(customInput);
+    container.appendChild(customWrap);
   }
 
   function renderPillList() {
@@ -349,26 +391,29 @@
       shape.className = "pill-shape";
       shape.style.background = pill.colorHex;
 
-      const prefix = document.createElement("span");
-      prefix.textContent = "/";
-      prefix.style.color = contrastTextColor(pill.colorHex);
-      prefix.style.fontFamily = "'RoobertTWITCH', sans-serif";
-      prefix.style.fontWeight = "500";
-      prefix.style.fontSize = "57px";
-      prefix.style.lineHeight = "1";
-      shape.appendChild(prefix);
-
+      // The leading "/" lives directly in the input's own value (not a fixed
+      // decoration beside it) - normal, deletable text, since a pill occasionally
+      // holds something other than a username and needs to drop the slash.
       const input = document.createElement("input");
       input.type = "text";
       input.value = pill.username;
       input.placeholder = "username";
       input.autocomplete = "off";
       input.spellcheck = false;
+      input.dataset.pillId = pill.id;
       input.style.color = contrastTextColor(pill.colorHex);
       input.style.width = Math.max(20, measureWidth(pill.username || "username")) + "px";
       input.addEventListener("input", () => {
         pill.username = input.value;
         input.style.width = Math.max(20, measureWidth(input.value || "username")) + "px";
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        // Deferred so this keydown event finishes on the current input before it
+        // gets torn down and rebuilt - rebuilding synchronously, from inside the
+        // very input handling the event, is what caused stray/duplicated keystrokes.
+        setTimeout(() => addPill(true), 0);
       });
       shape.appendChild(input);
       editor.appendChild(shape);
@@ -438,11 +483,21 @@
 
   document.addEventListener("click", () => closePopover());
 
-  document.getElementById("addPillBtn").addEventListener("click", () => {
+  function addPill(focusAfter) {
     const lastColor = pills[pills.length - 1].colorHex;
-    pills.push({ id: nextId++, username: "", colorHex: lastColor, ambassador: false });
+    const newId = nextId++;
+    pills.push({ id: newId, username: "/", colorHex: lastColor, ambassador: false });
     renderPillList();
-  });
+    if (focusAfter) {
+      const newInput = document.querySelector('input[data-pill-id="' + newId + '"]');
+      if (newInput) {
+        newInput.focus();
+        newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+      }
+    }
+  }
+
+  document.getElementById("addPillBtn").addEventListener("click", () => addPill(false));
 
   document.getElementById("clearAllBtn").addEventListener("click", () => {
     location.reload();

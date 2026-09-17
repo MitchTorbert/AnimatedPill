@@ -75,8 +75,11 @@ export const REST_PILL_HEIGHT = pillBottom[13] - pillTop[13];
 
 // Shared layout math also used by PillWithAmbassador.tsx to know where the username
 // pill will be at a given frame, so it can place the ambassador badge beside it.
+// `username` is rendered exactly as given - the leading "/" is typed into it client-side
+// (deletable, since a pill occasionally holds something other than a username), not
+// added here.
 export function getPillMetrics(username: string, frame: number) {
-  const label = `/${username}`;
+  const label = username;
   const { width: textWidth } = measureText(label);
   const restWidth = textWidth + PADDING_TOTAL;
   const widthScale = sample(pillWidthScale, frame);
@@ -96,7 +99,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   // rates. At 30fps this is just `frame` unchanged.
   const refFrame = (frame * REFERENCE_FPS) / fps;
 
-  const label = `/${username}`;
+  const label = username;
   const textColor = contrastTextColor(colorHex);
   const { ascent } = measureText(label);
 

@@ -51,13 +51,20 @@ app.get("/api/colors", (_req, res) => {
 // generic Light/Pastel/[hue]/Dark label built from each color's position within its
 // hue group (light-to-dark, per colors.ts), so filenames read like plain color
 // descriptions. "Neon" replaces "Light" only for Green/Blue's brightest swatch,
-// which is the only pair that actually reads as neon rather than pastel.
+// which is the only pair that actually reads as neon rather than pastel. Purple gets
+// its own full override - its position-1 swatch is the vivid brand purple, not a
+// pastel, so the generic scheme reads wrong for that whole group.
 const POSITION_MODIFIERS = ["Light", "Pastel", "", "Dark"];
 const NEON_GROUPS = new Set(["Green", "Blue"]);
+const GROUP_NAME_OVERRIDES: Record<string, string[]> = {
+  Purple: ["Light Purple", "Purple", "Dark Purple", "Deep Purple"],
+};
 
 const HEX_TO_COLOR_NAME = new Map<string, string>(
   BRAND_COLOR_GROUPS.flatMap((group) =>
     group.colors.map((c, i) => {
+      const override = GROUP_NAME_OVERRIDES[group.label];
+      if (override) return [c.hex.toUpperCase(), override[i]] as const;
       const modifier = i === 0 && NEON_GROUPS.has(group.label) ? "Neon" : POSITION_MODIFIERS[i];
       const name = modifier ? `${modifier} ${group.label}` : group.label;
       return [c.hex.toUpperCase(), name] as const;
@@ -79,7 +86,9 @@ function validatePill(p: unknown): PillRequest | null {
   if (typeof username !== "string" || !username.trim()) return null;
   if (typeof colorHex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) return null;
   return {
-    username: username.trim().replace(/^\/+/, ""),
+    // Rendered exactly as typed now - the leading "/" is normal, deletable text in
+    // the client's input, not something this trims and Pill.tsx adds back.
+    username: username.trim(),
     colorHex,
     ambassador: ambassador === true,
   };
@@ -87,7 +96,10 @@ function validatePill(p: unknown): PillRequest | null {
 
 function fileNameFor(pill: PillRequest): string {
   const colorName = HEX_TO_COLOR_NAME.get(pill.colorHex.toUpperCase()) ?? "Custom";
-  return `${pill.username} Pill ${colorName}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+  // A leading "/" reads fine in the pill graphic but not in a filename, so strip it
+  // here specifically regardless of whether the pill itself shows one.
+  const cleanName = pill.username.replace(/^\/+/, "");
+  return `${cleanName} Pill ${colorName}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
 async function renderOnePill(pill: PillRequest, scale: number, fps: number, outputPath: string) {
@@ -167,7 +179,7 @@ app.post("/api/render", async (req, res) => {
 
     const zipName = `Pills ${pills
       .slice(0, 2)
-      .map((p) => p.username)
+      .map((p) => p.username.replace(/^\/+/, ""))
       .join(" ")}.zip`.replace(/[/\\?%*:|"<>]/g, "-");
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
