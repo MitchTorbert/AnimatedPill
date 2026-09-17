@@ -43,11 +43,14 @@
     padding: 0 46px;
     transition: background 0.15s ease;
   }
-  .pill-shape input {
+  .pill-shape input,
+  .pill-hint {
     font-family: "RoobertTWITCH", sans-serif;
     font-weight: 500;
     font-size: 57px;
     line-height: 1;
+  }
+  .pill-shape input {
     border: none;
     outline: none;
     background: transparent;
@@ -55,6 +58,7 @@
     min-width: 4px;
   }
   .pill-shape input::placeholder { opacity: 0.45; }
+  .pill-hint { pointer-events: none; white-space: nowrap; margin-left: 2px; }
 
   .color-picker-wrap { position: relative; flex-shrink: 0; }
 
@@ -168,6 +172,14 @@
     background-position: right 18px center;
   }
 
+  .gif-fps-note {
+    display: inline-flex;
+    align-items: center;
+    color: #71717a;
+    background-image: none;
+    cursor: default;
+  }
+
   .list-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 8px auto 0; }
   .text-link-btn {
     background: none;
@@ -264,6 +276,11 @@
           <option value="23.976">23.98 fps</option>
           <option value="30" selected>30 fps</option>
           <option value="60">60 fps</option>
+        </select>
+        <span id="gifFpsNote" class="pill-select gif-fps-note" hidden>12.5 fps</span>
+        <select id="exportFileType" class="pill-select">
+          <option value="mov" selected>.mov</option>
+          <option value="gif">.gif (alpha)</option>
         </select>
       </div>
       <button class="download" id="downloadBtn">Download (1 pill)</button>
@@ -403,9 +420,27 @@
       input.dataset.pillId = pill.id;
       input.style.color = contrastTextColor(pill.colorHex);
       input.style.width = Math.max(20, measureWidth(pill.username || "username")) + "px";
+
+      // Ghost hint: shows grayed-out "username" right after the slash, for a pill
+      // that's still just "/" - not real placeholder text (the input already has
+      // real "/" as its value, so the native placeholder attribute only shows on a
+      // fully empty input), and not part of the value, so typing lands right after
+      // the slash rather than after this hint.
+      const hint = document.createElement("span");
+      hint.className = "pill-hint";
+      hint.textContent = "username";
+      hint.style.color = contrastTextColor(pill.colorHex) === "#000000" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.4)";
+      const updateHint = () => { hint.hidden = pill.username !== "/"; };
+      updateHint();
+      shape.appendChild(input);
+      shape.appendChild(hint);
+      shape.addEventListener("click", () => input.focus());
+      editor.appendChild(shape);
+
       input.addEventListener("input", () => {
         pill.username = input.value;
         input.style.width = Math.max(20, measureWidth(input.value || "username")) + "px";
+        updateHint();
       });
       input.addEventListener("keydown", (e) => {
         if (e.key !== "Enter") return;
@@ -415,8 +450,6 @@
         // very input handling the event, is what caused stray/duplicated keystrokes.
         setTimeout(() => addPill(true), 0);
       });
-      shape.appendChild(input);
-      editor.appendChild(shape);
 
       const colorPickerWrap = document.createElement("div");
       colorPickerWrap.className = "color-picker-wrap";
@@ -503,6 +536,14 @@
     location.reload();
   });
 
+  // GIF only supports 12.5fps here (see server), so the fps dropdown is replaced
+  // with a plain "12.5 fps" note while .gif is selected - nothing to choose.
+  document.getElementById("exportFileType").addEventListener("change", (e) => {
+    const isGif = e.target.value === "gif";
+    document.getElementById("exportFps").hidden = isGif;
+    document.getElementById("gifFpsNote").hidden = !isGif;
+  });
+
   async function init() {
     const res = await fetch("/api/colors");
     colorGroups = await res.json();
@@ -516,7 +557,8 @@
     const status = document.getElementById("status");
     const btn = document.getElementById("downloadBtn");
     const scale = parseFloat(document.getElementById("exportScale").value);
-    const fps = parseFloat(document.getElementById("exportFps").value);
+    const fileType = document.getElementById("exportFileType").value;
+    const fps = fileType === "gif" ? 12.5 : parseFloat(document.getElementById("exportFps").value);
 
     const cleaned = pills.map((p) => ({
       username: p.username.trim(),
@@ -540,7 +582,7 @@
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pills: cleaned, scale, fps }),
+        body: JSON.stringify({ pills: cleaned, scale, fps, fileType }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -551,7 +593,7 @@
       const match = disposition.match(/filename="(.+)"/);
       const fallback = cleaned.length > 1
         ? "Pills " + cleaned.slice(0, 2).map((p) => p.username).join(" ") + ".zip"
-        : cleaned[0].username + " Pill.mov";
+        : cleaned[0].username + " Pill." + fileType;
       const filename = match ? match[1] : fallback;
 
       const url = URL.createObjectURL(blob);

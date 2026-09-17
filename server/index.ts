@@ -73,6 +73,8 @@ const HEX_TO_COLOR_NAME = new Map<string, string>(
 );
 
 const ALLOWED_FPS = [23.976, 30, 60];
+const GIF_FPS = 12.5;
+type FileType = "mov" | "gif";
 
 interface PillRequest {
   username: string;
@@ -94,27 +96,43 @@ function validatePill(p: unknown): PillRequest | null {
   };
 }
 
-function fileNameFor(pill: PillRequest): string {
+function fileNameFor(pill: PillRequest, fileType: FileType): string {
   const colorName = HEX_TO_COLOR_NAME.get(pill.colorHex.toUpperCase()) ?? "Custom";
   // A leading "/" reads fine in the pill graphic but not in a filename, so strip it
   // here specifically regardless of whether the pill itself shows one.
   const cleanName = pill.username.replace(/^\/+/, "");
-  return `${cleanName} Pill ${colorName}.mov`.replace(/[/\\?%*:|"<>]/g, "-");
+  return `${cleanName} Pill ${colorName}.${fileType}`.replace(/[/\\?%*:|"<>]/g, "-");
 }
 
-async function renderOnePill(pill: PillRequest, scale: number, fps: number, outputPath: string) {
+async function renderOnePill(
+  pill: PillRequest,
+  scale: number,
+  fps: number,
+  fileType: FileType,
+  outputPath: string
+) {
   const location = await getBundle();
   const inputProps = { username: pill.username, colorHex: pill.colorHex, fps };
   const compositionId = pill.ambassador ? "PillWithAmbassador" : "Pill";
   const composition = await selectComposition({ serveUrl: location, id: compositionId, inputProps });
 
+  // GIF can only do binary (on/off) transparency, not the soft anti-aliased alpha
+  // ProRes 4444 gives us - the pill's rounded edges will look a little harder in a
+  // GIF, which is an inherent limitation of the format, not something to fix here.
+  const codecOptions =
+    fileType === "gif"
+      ? ({ codec: "gif", numberOfGifLoops: null, imageFormat: "png" } as const)
+      : ({
+          codec: "prores",
+          proResProfile: "4444",
+          pixelFormat: "yuva444p10le",
+          imageFormat: "png",
+        } as const);
+
   await renderMedia({
     composition,
     serveUrl: location,
-    codec: "prores",
-    proResProfile: "4444",
-    pixelFormat: "yuva444p10le",
-    imageFormat: "png",
+    ...codecOptions,
     muted: true,
     scale,
     outputLocation: outputPath,
@@ -136,7 +154,10 @@ app.post("/api/render", async (req, res) => {
   const body = req.body ?? {};
   const rawPills = Array.isArray(body.pills) ? body.pills : [body]; // back-compat: single {username,colorHex} body
   const scale = typeof body.scale === "number" && body.scale > 0 && body.scale <= 1 ? body.scale : 1;
-  const fps = ALLOWED_FPS.includes(body.fps) ? body.fps : 30;
+  const fileType: FileType = body.fileType === "gif" ? "gif" : "mov";
+  // Enforced server-side too, not just by the client hiding the fps dropdown - a
+  // GIF is always 12.5fps regardless of what else is in the request.
+  const fps = fileType === "gif" ? GIF_FPS : ALLOWED_FPS.includes(body.fps) ? body.fps : 30;
 
   const pills: PillRequest[] = [];
   for (const raw of rawPills) {
@@ -154,14 +175,14 @@ app.post("/api/render", async (req, res) => {
 
   const tmpOutputs: string[] = [];
   const makeTmpPath = () =>
-    path.join(os.tmpdir(), `pill-${Date.now()}-${Math.random().toString(36).slice(2)}.mov`);
+    path.join(os.tmpdir(), `pill-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileType}`);
 
   try {
     if (pills.length === 1) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pills[0], scale, fps, outputPath);
-      res.download(outputPath, fileNameFor(pills[0]), (err) => {
+      await renderOnePill(pills[0], scale, fps, fileType, outputPath);
+      res.download(outputPath, fileNameFor(pills[0], fileType), (err) => {
         fs.unlink(outputPath, () => {});
         if (err) console.error("Download error", err);
       });
@@ -173,8 +194,8 @@ app.post("/api/render", async (req, res) => {
     for (const pill of pills) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pill, scale, fps, outputPath);
-      rendered.push({ path: outputPath, name: fileNameFor(pill) });
+      await renderOnePill(pill, scale, fps, fileType, outputPath);
+      rendered.push({ path: outputPath, name: fileNameFor(pill, fileType) });
     }
 
     const zipName = `Pills ${pills
