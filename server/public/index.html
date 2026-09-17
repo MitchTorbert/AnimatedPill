@@ -191,12 +191,11 @@
   }
   .text-link-btn:hover { color: #ff6b6b; }
 
+  .popover-rule-above { margin-top: 14px; padding-top: 12px; border-top: 1px solid #3a3a3d; }
+
   .popover-apply-all {
     display: block;
     width: 100%;
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid #3a3a3d;
     background: none;
     border-left: none;
     border-right: none;
@@ -209,7 +208,7 @@
   }
   .popover-apply-all:hover { color: #9146FF; }
 
-  .popover-custom { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .popover-custom { display: flex; align-items: center; gap: 8px; }
   .popover-custom span { font-size: 12px; font-weight: 600; color: #71717a; white-space: nowrap; }
   .popover-custom input {
     flex: 1;
@@ -359,19 +358,9 @@
       container.appendChild(groupEl);
     });
 
-    const applyAllBtn = document.createElement("button");
-    applyAllBtn.className = "popover-apply-all";
-    applyAllBtn.textContent = "Apply this color to all pills";
-    applyAllBtn.addEventListener("click", () => {
-      pills.forEach((p) => { p.colorHex = pill.colorHex; });
-      closePopover();
-      renderPillList();
-    });
-    container.appendChild(applyAllBtn);
-
     // For the rare outside-initiative pill that needs a non-brand color.
     const customWrap = document.createElement("div");
-    customWrap.className = "popover-custom";
+    customWrap.className = "popover-custom popover-rule-above";
     const customLabel = document.createElement("span");
     customLabel.textContent = "Custom:";
     customWrap.appendChild(customLabel);
@@ -398,6 +387,16 @@
     });
     customWrap.appendChild(customInput);
     container.appendChild(customWrap);
+
+    const applyAllBtn = document.createElement("button");
+    applyAllBtn.className = "popover-apply-all popover-rule-above";
+    applyAllBtn.textContent = "Apply this color to all pills";
+    applyAllBtn.addEventListener("click", () => {
+      pills.forEach((p) => { p.colorHex = pill.colorHex; });
+      closePopover();
+      renderPillList();
+    });
+    container.appendChild(applyAllBtn);
   }
 
   function renderPillList() {
@@ -631,7 +630,7 @@
       if (cleaned.length >= ZIP_THRESHOLD) {
         status.textContent = "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)...";
         const { blob, filename } = await renderRequest(cleaned, scale, fps, fileType);
-        const fallback = "Pills " + cleaned.slice(0, 2).map((p) => p.username).join(" ") + ".zip";
+        const fallback = cleaned.length + " Pills " + cleaned[0].username + ".zip";
         triggerDownload(blob, filename || fallback);
         status.textContent = "Downloaded " + (filename || fallback);
       } else {
