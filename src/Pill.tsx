@@ -72,6 +72,12 @@ export function measureText(text: string): { width: number; ascent: number } {
 // Rest (fully-settled) pill height - constant regardless of username, matches the
 // hold-frame measurement (frame 13) baked into pill-motion.json.
 export const REST_PILL_HEIGHT = pillBottom[13] - pillTop[13];
+// pillTop/pillBottom (and restTextTopY) are all absolute pixel offsets measured
+// against the ORIGINAL reference canvas, not proportional to the current comp
+// height - Root.tsx now sizes each render's canvas tightly around the actual pill
+// instead of a fixed 1080px-tall one, so every component re-centers using this
+// rest-frame center point against whatever height it actually got.
+export const REST_PILL_CENTER_Y = (pillTop[13] + pillBottom[13]) / 2;
 
 // Shared layout math also used by PillWithAmbassador.tsx to know where the username
 // pill will be at a given frame, so it can place the ambassador badge beside it.
@@ -92,12 +98,15 @@ export function getPillMetrics(username: string, frame: number) {
 
 export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride }) => {
   const frame = useCurrentFrame();
-  const { width: compWidth, fps } = useVideoConfig();
+  const { width: compWidth, height: compHeight, fps } = useVideoConfig();
   // Every measured curve and frame-number constant below is authored against the
   // 30fps reference footage - converting the actual playback frame into that
   // reference timeline is the one change needed to support other export frame
   // rates. At 30fps this is just `frame` unchanged.
   const refFrame = (frame * REFERENCE_FPS) / fps;
+  // See REST_PILL_CENTER_Y - re-centers the (absolute-coordinate) measured data
+  // against whatever height this render's canvas actually got.
+  const verticalShift = compHeight / 2 - REST_PILL_CENTER_Y;
 
   const label = username;
   const textColor = contrastTextColor(colorHex);
@@ -144,7 +153,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
         style={{
           position: "absolute",
           left: centerX - curWidth / 2,
-          top: curTop,
+          top: curTop + verticalShift,
           width: curWidth,
           height: curHeight,
           borderRadius: curHeight / 2,
@@ -157,7 +166,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
         style={{
           position: "absolute",
           left: centerX - curWidth / 2,
-          top: curTop,
+          top: curTop + verticalShift,
           width: curWidth,
           height: curHeight,
           borderRadius: curHeight / 2,

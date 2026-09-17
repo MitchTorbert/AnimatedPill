@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Easing, Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { Pill, PillProps, getPillMetrics, REST_PILL_HEIGHT, REFERENCE_FPS } from "./Pill";
+import { Pill, PillProps, getPillMetrics, REST_PILL_HEIGHT, REST_PILL_CENTER_Y, REFERENCE_FPS } from "./Pill";
 
 export interface PillWithAmbassadorProps extends PillProps {}
 
@@ -13,8 +13,10 @@ export interface PillWithAmbassadorProps extends PillProps {}
 // direction) is never clipped, so what IS visible always shows the image's own natural
 // rounded cap, never a straight cropped edge.
 const AMBASSADOR_SRC = "images/ambassador-pill.png";
-const AMBASSADOR_ASPECT = 1045 / 217;
-const GAP = 48; // px between the username pill and the ambassador badge, at comp scale
+// Exported so Root.tsx's calculateMetadata can size the composition around the
+// actual username+ambassador pair instead of a fixed oversized canvas.
+export const AMBASSADOR_ASPECT = 1045 / 217;
+export const GAP = 48; // px between the username pill and the ambassador badge, at comp scale
 
 // Sequenced relative to the username pill's own (untouched) 0-13 entrance and 146-159
 // exit: the badge only starts sliding out once the pill has fully settled. Exit is
@@ -60,7 +62,11 @@ export const PillWithAmbassador: React.FC<PillWithAmbassadorProps> = ({ username
     curBottom,
     curHeight: usernameCurHeight,
   } = getPillMetrics(username, refFrame);
-  const centerY = (curTop + curBottom) / 2;
+  // See REST_PILL_CENTER_Y in Pill.tsx - curTop/curBottom are absolute against the
+  // original reference canvas, so re-center against whatever height this render's
+  // (now tightly-sized) canvas actually got.
+  const verticalShift = compHeight / 2 - REST_PILL_CENTER_Y;
+  const centerY = (curTop + curBottom) / 2 + verticalShift;
 
   const restAmbWidth = REST_PILL_HEIGHT * AMBASSADOR_ASPECT;
   const progress = ambassadorProgressAt(refFrame);

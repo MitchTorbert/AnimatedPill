@@ -172,13 +172,7 @@
     background-position: right 18px center;
   }
 
-  .gif-fps-note {
-    display: inline-flex;
-    align-items: center;
-    color: #71717a;
-    background-image: none;
-    cursor: default;
-  }
+  .pill-select:disabled { opacity: 0.5; cursor: default; }
 
   .list-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 8px auto 0; }
   .text-link-btn {
@@ -277,7 +271,6 @@
           <option value="30" selected>30 fps</option>
           <option value="60">60 fps</option>
         </select>
-        <span id="gifFpsNote" class="pill-select gif-fps-note" hidden>12.5 fps</span>
         <select id="exportFileType" class="pill-select">
           <option value="mov" selected>.mov</option>
           <option value="gif">.gif (alpha)</option>
@@ -536,12 +529,22 @@
     location.reload();
   });
 
-  // GIF only supports 12.5fps here (see server), so the fps dropdown is replaced
-  // with a plain "12.5 fps" note while .gif is selected - nothing to choose.
+  // One fps control, not two - GIF only supports 12.5fps (see server), so
+  // selecting .gif swaps the same dropdown's own options down to that single
+  // fixed value and disables it, instead of showing a second fps element.
+  const MOV_FPS_OPTIONS = document.getElementById("exportFps").innerHTML;
+  let lastMovFps = "30";
   document.getElementById("exportFileType").addEventListener("change", (e) => {
-    const isGif = e.target.value === "gif";
-    document.getElementById("exportFps").hidden = isGif;
-    document.getElementById("gifFpsNote").hidden = !isGif;
+    const fpsSelect = document.getElementById("exportFps");
+    if (e.target.value === "gif") {
+      lastMovFps = fpsSelect.value;
+      fpsSelect.innerHTML = '<option value="12.5" selected>12.5 fps</option>';
+      fpsSelect.disabled = true;
+    } else {
+      fpsSelect.innerHTML = MOV_FPS_OPTIONS;
+      fpsSelect.value = lastMovFps;
+      fpsSelect.disabled = false;
+    }
   });
 
   async function init() {
