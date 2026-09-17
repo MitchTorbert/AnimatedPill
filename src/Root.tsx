@@ -14,6 +14,13 @@ export const AMBASSADOR_COMP_WIDTH = 4000;
 // Small safety margin around the pill's own rest-size bounding box, mainly so
 // the anti-aliased edge of its rounded corners never has a chance to clip.
 const CROP_MARGIN = 12;
+// Export scale options are 0.3/0.35/0.5/1 - width/height need to stay a whole
+// number of pixels after multiplying by any of those, or Remotion's stitcher
+// rejects the render outright ("height must be an integer, but is 82.5", from
+// a raw 275 * 0.3). 20 is the LCM of those scales' denominators, so rounding
+// up to a multiple of it keeps every one of them an exact integer.
+const SCALE_GRID = 20;
+const roundUpToGrid = (n: number) => Math.ceil(n / SCALE_GRID) * SCALE_GRID;
 
 // An export fps other than 30 changes the composition's real fps/duration (so the
 // clip is still 6 real seconds) - everything else about the props is untouched.
@@ -28,15 +35,15 @@ const calculateMetadata: CalculateMetadataFunction<PillProps> = ({ props, compos
 
   const { width: textWidth } = measureText(props.username ?? "");
   const restWidth = textWidth + PADDING_TOTAL;
-  const height = Math.ceil(REST_PILL_HEIGHT) + CROP_MARGIN * 2;
+  const height = roundUpToGrid(Math.ceil(REST_PILL_HEIGHT) + CROP_MARGIN * 2);
 
   if (compositionId === "PillWithAmbassador") {
     const restAmbWidth = REST_PILL_HEIGHT * AMBASSADOR_ASPECT;
     const pairWidth = restWidth + GAP + restAmbWidth;
-    return { fps, durationInFrames, width: Math.ceil(pairWidth) + CROP_MARGIN * 2, height };
+    return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(pairWidth) + CROP_MARGIN * 2), height };
   }
 
-  return { fps, durationInFrames, width: Math.ceil(restWidth) + CROP_MARGIN * 2, height };
+  return { fps, durationInFrames, width: roundUpToGrid(Math.ceil(restWidth) + CROP_MARGIN * 2), height };
 };
 
 export const RemotionRoot: React.FC = () => {
