@@ -45,6 +45,51 @@ app.get("/api/colors", (_req, res) => {
   res.json(BRAND_COLOR_GROUPS);
 });
 
+// The deployed instance has very little CPU/RAM (see earlier OOM fixes) - two
+// people rendering at the same moment means two real headless-Chrome processes
+// competing for that same tiny budget, which is exactly what caused those
+// crashes before, just triggered by concurrency instead of a single heavy
+// render. Queuing every render request through here means only one ever
+// actually runs at a time; everyone else's request just waits its turn
+// instead of racing and risking a crash for both.
+let queueLength = 0;
+let queueTail: Promise<void> = Promise.resolve();
+const RENDER_TIMEOUT_MS = 5 * 60 * 1000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Render timed out")), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+function enqueueRender<T>(task: () => Promise<T>): Promise<T> {
+  queueLength++;
+  const run = () => withTimeout(task(), RENDER_TIMEOUT_MS);
+  const runTask = queueTail.then(run, run);
+  queueTail = runTask.then(
+    () => undefined,
+    () => undefined
+  );
+  runTask.finally(() => {
+    queueLength--;
+  });
+  return runTask;
+}
+
+app.get("/api/status", (_req, res) => {
+  res.json({ busy: queueLength > 0, queueLength });
+});
+
 const ALLOWED_FPS = [23.976, 30, 60];
 const GIF_FPS = 12.5;
 type FileType = "mov" | "gif";
@@ -149,14 +194,25 @@ app.post("/api/render", async (req, res) => {
   const makeTmpPath = () =>
     path.join(os.tmpdir(), `pill-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileType}`);
 
-  try {
+  const performRender = async () => {
     if (pills.length === 1) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
       await renderOnePill(pills[0], scale, fps, fileType, outputPath);
-      res.download(outputPath, fileNameFor(pills[0], fileType), (err) => {
-        fs.unlink(outputPath, () => {});
-        if (err) console.error("Download error", err);
+      // Awaited rather than fire-and-forget: performRender resolving is what
+      // lets the queue move on to the next request (see enqueueRender) and is
+      // what triggers the tmpOutputs cleanup below - both need to wait until
+      // res.download() has actually finished reading the file, or the cleanup
+      // can delete it out from under an in-progress download.
+      await new Promise<void>((resolve, reject) => {
+        res.download(outputPath, fileNameFor(pills[0], fileType), (err) => {
+          if (err) {
+            console.error("Download error", err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
       });
       return;
     }
@@ -184,12 +240,17 @@ app.post("/api/render", async (req, res) => {
       archive.file(r.path, { name: r.name });
     }
     await archive.finalize();
-    for (const t of tmpOutputs) fs.unlink(t, () => {});
+  };
+
+  try {
+    await enqueueRender(performRender);
   } catch (err) {
     console.error("Render failed", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Render failed. Check server logs." });
+      const message = err instanceof Error && err.message === "Render timed out" ? err.message : "Render failed. Check server logs.";
+      res.status(500).json({ error: message });
     }
+  } finally {
     for (const t of tmpOutputs) fs.unlink(t, () => {});
   }
 });

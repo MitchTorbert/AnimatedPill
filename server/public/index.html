@@ -241,6 +241,8 @@
   .status { margin-top: 16px; font-size: 14px; color: #adadb8; text-align: right; min-height: 20px; }
   .status.error { color: #ff6b6b; }
   .status.success { color: #63e6be; }
+
+  .server-status { font-size: 13px; color: #f0b429; text-align: right; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -262,6 +264,7 @@
       <button class="text-link-btn" id="clearAllBtn">Clear all</button>
     </div>
 
+    <div class="server-status" id="serverStatus" hidden>⏳ Someone else is exporting right now - yours will start right after</div>
     <div class="export-row">
       <div class="export-selects">
         <select id="exportScale" class="pill-select">
@@ -588,6 +591,60 @@
     URL.revokeObjectURL(url);
   }
 
+  // Idle check: only matters (and only shown) while nobody has clicked Download
+  // yet - once a render is in flight, renderRequestWithQueueStatus below takes
+  // over the same #status line with the requester's own position instead.
+  async function pollIdleServerStatus() {
+    const el = document.getElementById("serverStatus");
+    if (document.getElementById("downloadBtn").disabled) return; // a render is active, not idle
+    try {
+      const res = await fetch("/api/status");
+      const data = await res.json();
+      el.hidden = !data.busy;
+    } catch (e) {
+      el.hidden = true;
+    }
+  }
+  pollIdleServerStatus();
+  setInterval(pollIdleServerStatus, 10000);
+
+  // Wraps one render request with polling of its own queue position, so
+  // "Rendering..." only shows once this request is the one actually running -
+  // while something else is still ahead of it, it says so instead.
+  async function renderRequestWithQueueStatus(pills, scale, fps, fileType, setStatusText, renderingText) {
+    let settled = false;
+    const checkQueue = async () => {
+      if (settled) return;
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        if (settled) return;
+        const aheadOfMe = Math.max(0, data.queueLength - 1);
+        setStatusText(
+          aheadOfMe === 0
+            ? renderingText
+            : aheadOfMe === 1
+            ? "You're next in line - waiting for the current export to finish..."
+            : "Queued behind " + aheadOfMe + " exports - yours will start automatically..."
+        );
+      } catch (e) {
+        // A status hiccup shouldn't disrupt the actual render - just leave
+        // whatever text was already showing.
+      }
+    };
+    setStatusText(renderingText); // optimistic - corrected within one poll if actually queued
+    document.getElementById("serverStatus").hidden = true; // the active status line takes over now
+    const interval = setInterval(checkQueue, 3000);
+    try {
+      const resultPromise = renderRequest(pills, scale, fps, fileType);
+      await checkQueue();
+      return await resultPromise;
+    } finally {
+      settled = true;
+      clearInterval(interval);
+    }
+  }
+
   async function renderRequest(pills, scale, fps, fileType) {
     const res = await fetch("/api/render", {
       method: "POST",
@@ -628,8 +685,12 @@
 
     try {
       if (cleaned.length >= ZIP_THRESHOLD) {
-        status.textContent = "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)...";
-        const { blob, filename } = await renderRequest(cleaned, scale, fps, fileType);
+        const renderingText = "Rendering " + cleaned.length + " pills, one at a time (~10-15s each)...";
+        const { blob, filename } = await renderRequestWithQueueStatus(
+          cleaned, scale, fps, fileType,
+          (text) => { status.textContent = text; },
+          renderingText
+        );
         const fallback = cleaned.length + " Pills " + cleaned[0].username + ".zip";
         triggerDownload(blob, filename || fallback);
         status.textContent = "Downloaded " + (filename || fallback);
@@ -637,11 +698,15 @@
         // Each pill is its own request/response/download - a plain file per
         // pill, no zip step, for the common small-batch case.
         for (let i = 0; i < cleaned.length; i++) {
-          status.textContent = cleaned.length > 1
+          const renderingText = cleaned.length > 1
             ? "Rendering pill " + (i + 1) + " of " + cleaned.length + "..."
             : "Rendering... this can take 10-30 seconds.";
           const pill = cleaned[i];
-          const { blob, filename } = await renderRequest([pill], scale, fps, fileType);
+          const { blob, filename } = await renderRequestWithQueueStatus(
+            [pill], scale, fps, fileType,
+            (text) => { status.textContent = text; },
+            renderingText
+          );
           const fallback = pill.username + " Pill." + fileType;
           triggerDownload(blob, filename || fallback);
           // A small gap between triggered downloads - firing several a.click()
