@@ -5,11 +5,21 @@ import os from "os";
 import archiver from "archiver";
 import { fileURLToPath } from "url";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 import { BRAND_COLOR_GROUPS } from "../src/colors";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+
+// Cancelling a render (see makeCancelSignal below) appears to trip an internal
+// Remotion cleanup path that rejects outside the promise this file actually
+// awaits, which otherwise crashes the whole process - taking down every other
+// in-progress and queued render with it, for everyone, which is a much worse
+// failure than the one render that was already abandoned. This is a last-resort
+// net, not a substitute for handling errors where they're thrown.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection (server staying up):", reason);
+});
 
 const app = express();
 app.use(express.json());
@@ -126,7 +136,8 @@ async function renderOnePill(
   scale: number,
   fps: number,
   fileType: FileType,
-  outputPath: string
+  outputPath: string,
+  cancelSignal: ReturnType<typeof makeCancelSignal>["cancelSignal"]
 ) {
   const location = await getBundle();
   const inputProps = { username: pill.username, colorHex: pill.colorHex, fps };
@@ -154,6 +165,7 @@ async function renderOnePill(
     scale,
     outputLocation: outputPath,
     inputProps,
+    cancelSignal,
     // Chrome defaults to single-process mode on Linux, which badly limits render
     // speed on a real multi-core host - this only matters on the Docker/Linux
     // deploy target, not local macOS dev.
@@ -194,11 +206,28 @@ app.post("/api/render", async (req, res) => {
   const makeTmpPath = () =>
     path.join(os.tmpdir(), `pill-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileType}`);
 
+  // Covers both an explicit Cancel-button click (aborts the fetch, closing this
+  // connection) and a page refresh/tab close mid-render (the browser closes the
+  // connection the same way) - either way, without this, the render would just
+  // keep running for nobody, tying up the one-at-a-time queue behind it for
+  // everyone else. If this request is still queued (hasn't started rendering
+  // yet) when its turn comes, the cancelled signal makes that renderMedia()
+  // call reject immediately instead of starting real work for an abandoned job.
+  // Listening on `res` (not `req`) matters: `req`'s own "close" fires as soon as
+  // the request body has been fully read, which happens almost immediately -
+  // long before rendering finishes - and would cancel every normal render.
+  // `res.close` only fires once the response is done or the connection died.
+  const { cancelSignal, cancel } = makeCancelSignal();
+  let finished = false;
+  res.on("close", () => {
+    if (!finished) cancel();
+  });
+
   const performRender = async () => {
     if (pills.length === 1) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pills[0], scale, fps, fileType, outputPath);
+      await renderOnePill(pills[0], scale, fps, fileType, outputPath, cancelSignal);
       // Awaited rather than fire-and-forget: performRender resolving is what
       // lets the queue move on to the next request (see enqueueRender) and is
       // what triggers the tmpOutputs cleanup below - both need to wait until
@@ -222,7 +251,7 @@ app.post("/api/render", async (req, res) => {
     for (const pill of pills) {
       const outputPath = makeTmpPath();
       tmpOutputs.push(outputPath);
-      await renderOnePill(pill, scale, fps, fileType, outputPath);
+      await renderOnePill(pill, scale, fps, fileType, outputPath, cancelSignal);
       rendered.push({ path: outputPath, name: fileNameFor(pill, fileType) });
     }
 
@@ -245,12 +274,15 @@ app.post("/api/render", async (req, res) => {
   try {
     await enqueueRender(performRender);
   } catch (err) {
-    console.error("Render failed", err);
-    if (!res.headersSent) {
-      const message = err instanceof Error && err.message === "Render timed out" ? err.message : "Render failed. Check server logs.";
+    const cancelled = err instanceof Error && err.message.includes("cancelled");
+    if (!cancelled) console.error("Render failed", err);
+    if (!res.headersSent && !res.writableEnded) {
+      const message =
+        err instanceof Error && err.message === "Render timed out" ? err.message : "Render failed. Check server logs.";
       res.status(500).json({ error: message });
     }
   } finally {
+    finished = true;
     for (const t of tmpOutputs) fs.unlink(t, () => {});
   }
 });

@@ -238,6 +238,19 @@
   button.download:disabled { opacity: 0.6; cursor: default; }
   button.download:hover:not(:disabled) { background: #7d2eff; }
 
+  button.cancel-render {
+    padding: 15px 22px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: 1px solid #3a3a3d;
+    background: transparent;
+    color: #adadb8;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.cancel-render:hover { border-color: #ff6b6b; color: #ff6b6b; }
+
   .status { margin-top: 16px; font-size: 14px; color: #adadb8; text-align: right; min-height: 20px; }
   .status.error { color: #ff6b6b; }
   .status.success { color: #63e6be; }
@@ -284,6 +297,7 @@
         </select>
       </div>
       <button class="download" id="downloadBtn">Download (1 pill)</button>
+      <button class="cancel-render" id="cancelBtn" hidden>Cancel</button>
     </div>
     <div class="status" id="status"></div>
   </div>
@@ -611,7 +625,7 @@
   // Wraps one render request with polling of its own queue position, so
   // "Rendering..." only shows once this request is the one actually running -
   // while something else is still ahead of it, it says so instead.
-  async function renderRequestWithQueueStatus(pills, scale, fps, fileType, setStatusText, renderingText) {
+  async function renderRequestWithQueueStatus(pills, scale, fps, fileType, setStatusText, renderingText, signal) {
     let settled = false;
     const checkQueue = async () => {
       if (settled) return;
@@ -636,7 +650,7 @@
     document.getElementById("serverStatus").hidden = true; // the active status line takes over now
     const interval = setInterval(checkQueue, 3000);
     try {
-      const resultPromise = renderRequest(pills, scale, fps, fileType);
+      const resultPromise = renderRequest(pills, scale, fps, fileType, signal);
       await checkQueue();
       return await resultPromise;
     } finally {
@@ -645,11 +659,12 @@
     }
   }
 
-  async function renderRequest(pills, scale, fps, fileType) {
+  async function renderRequest(pills, scale, fps, fileType, signal) {
     const res = await fetch("/api/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pills, scale, fps, fileType }),
+      signal,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -661,9 +676,19 @@
     return { blob, filename: match ? match[1] : null };
   }
 
+  // One shared controller, reassigned per download click - aborting it closes
+  // the in-flight fetch's connection, which the server (server/index.ts) detects
+  // via req.on("close") and uses to actually stop the render, not just give up
+  // on waiting for it.
+  let activeController = null;
+  document.getElementById("cancelBtn").addEventListener("click", () => {
+    if (activeController) activeController.abort();
+  });
+
   document.getElementById("downloadBtn").addEventListener("click", async () => {
     const status = document.getElementById("status");
     const btn = document.getElementById("downloadBtn");
+    const cancelBtn = document.getElementById("cancelBtn");
     const scale = parseFloat(document.getElementById("exportScale").value);
     const fileType = document.getElementById("exportFileType").value;
     const fps = fileType === "gif" ? 12.5 : parseFloat(document.getElementById("exportFps").value);
@@ -681,6 +706,9 @@
     }
 
     btn.disabled = true;
+    cancelBtn.hidden = false;
+    activeController = new AbortController();
+    const signal = activeController.signal;
     status.className = "status";
 
     try {
@@ -689,7 +717,8 @@
         const { blob, filename } = await renderRequestWithQueueStatus(
           cleaned, scale, fps, fileType,
           (text) => { status.textContent = text; },
-          renderingText
+          renderingText,
+          signal
         );
         const fallback = cleaned.length + " Pills " + cleaned[0].username + ".zip";
         triggerDownload(blob, filename || fallback);
@@ -705,7 +734,8 @@
           const { blob, filename } = await renderRequestWithQueueStatus(
             [pill], scale, fps, fileType,
             (text) => { status.textContent = text; },
-            renderingText
+            renderingText,
+            signal
           );
           const fallback = pill.username + " Pill." + fileType;
           triggerDownload(blob, filename || fallback);
@@ -720,10 +750,12 @@
       }
       status.className = "status success";
     } catch (err) {
-      status.textContent = err.message || "Something went wrong.";
-      status.className = "status error";
+      status.textContent = err.name === "AbortError" ? "Cancelled." : (err.message || "Something went wrong.");
+      status.className = err.name === "AbortError" ? "status" : "status error";
     } finally {
       btn.disabled = false;
+      cancelBtn.hidden = true;
+      activeController = null;
     }
   });
 
