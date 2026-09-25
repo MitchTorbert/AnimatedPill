@@ -155,6 +155,16 @@ async function renderOnePill(
           proResProfile: "4444",
           pixelFormat: "yuva444p10le",
           imageFormat: "png",
+          // Without this, the file's color matrix is left untagged and some
+          // editors (confirmed: Premiere) fall back to guessing it, partly
+          // from resolution - our canvas is unusually small (tightly cropped
+          // to the pill, often just a few hundred px), which is exactly the
+          // kind of size that gets misread as legacy SD content and decoded
+          // with the wrong (BT.601) matrix instead of BT.709, muting
+          // saturated colors uniformly across the whole fill. Chrome renders
+          // in sRGB, whose primaries match BT.709, so this is what the file
+          // should have been tagged as all along, not a stylistic choice.
+          colorSpace: "bt709",
         } as const);
 
   await renderMedia({
