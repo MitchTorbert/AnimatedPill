@@ -132,7 +132,14 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   // pill's own already-verified boundary. The pill being small/growing early on and
   // shrinking on exit is what naturally produces the "enters from below / exits through
   // the top, matted by the pill" look - no separate reveal-window needed. ---
-  const restBaselineY = restTextTopY + ascent; // top-edge is descender-independent, so this is stable
+  // Measured across several usernames (no descenders, so purely a centering check):
+  // the ascent-box sat consistently 4px too high within the pill - 71px of gap above
+  // it vs 79px below, out of a 250px-tall pill, the same 8px split every time
+  // regardless of which text. TEXT_VERTICAL_OFFSET corrects that constant bias so the
+  // ascent-box (not the full ascent+descent box - descenders are meant to hang down
+  // into the padding, not be centered for) lands centered instead.
+  const TEXT_VERTICAL_OFFSET = 4;
+  const restBaselineY = restTextTopY + ascent + TEXT_VERTICAL_OFFSET; // top-edge is descender-independent, so this is stable
   // Past the point where direct pixel tracking got too noisy to trust, continue the text's
   // OWN exit motion on its own pace rather than tying it to either pill edge - the measured
   // real data shows its per-frame delta accelerating ~1.75x each frame right up to that
