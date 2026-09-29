@@ -256,6 +256,7 @@
   .status.success { color: #63e6be; }
 
   .server-status { font-size: 13px; color: #f0b429; text-align: right; margin-bottom: 8px; }
+  .multi-download-note { font-size: 13px; color: #71a5d6; text-align: right; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -299,7 +300,11 @@
       <button class="download" id="downloadBtn">Download (1 pill)</button>
       <button class="cancel-render" id="cancelBtn" hidden>Cancel</button>
     </div>
+    <div class="multi-download-note" id="multiDownloadNote" hidden>Your browser may ask to allow multiple downloads - click Allow to get all of them.</div>
     <div class="status" id="status"></div>
+    <div class="list-actions" id="redownloadRow" hidden>
+      <button class="text-link-btn" id="redownloadBtn">Download again</button>
+    </div>
   </div>
 
   <!-- hidden measurer used to auto-size each pill input as you type -->
@@ -605,6 +610,24 @@
     URL.revokeObjectURL(url);
   }
 
+  // Holds the blobs from the last successful batch so "Download again" can
+  // just re-offer them - no need to re-render anything, since the actual
+  // (expensive) work is already done and sitting in memory. Mainly there for
+  // when the browser's own "this site wants to download multiple files"
+  // prompt gets missed or blocked and some files never landed.
+  let lastDownloadBatch = null; // [{blob, filename}, ...]
+
+  async function triggerDownloadBatch(items) {
+    for (let i = 0; i < items.length; i++) {
+      triggerDownload(items[i].blob, items[i].filename);
+      if (i < items.length - 1) await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+
+  document.getElementById("redownloadBtn").addEventListener("click", () => {
+    if (lastDownloadBatch) triggerDownloadBatch(lastDownloadBatch);
+  });
+
   // Idle check: only matters (and only shown) while nobody has clicked Download
   // yet - once a render is in flight, renderRequestWithQueueStatus below takes
   // over the same #status line with the requester's own position instead.
@@ -710,6 +733,9 @@
     activeController = new AbortController();
     const signal = activeController.signal;
     status.className = "status";
+    document.getElementById("redownloadRow").hidden = true;
+    lastDownloadBatch = null;
+    const multiNote = document.getElementById("multiDownloadNote");
 
     try {
       if (cleaned.length >= ZIP_THRESHOLD) {
@@ -721,11 +747,21 @@
           signal
         );
         const fallback = cleaned.length + " Pills " + cleaned[0].username + ".zip";
-        triggerDownload(blob, filename || fallback);
-        status.textContent = "Downloaded " + (filename || fallback);
+        const finalName = filename || fallback;
+        triggerDownload(blob, finalName);
+        lastDownloadBatch = [{ blob, filename: finalName }];
+        status.textContent = "Downloaded " + finalName;
       } else {
         // Each pill is its own request/response/download - a plain file per
-        // pill, no zip step, for the common small-batch case.
+        // pill, no zip step, for the common small-batch case. Chrome (and
+        // other browsers) treat several downloads fired in quick succession
+        // as popup-style spam and may prompt to allow them, or silently drop
+        // ones past the prompt if it's missed - the note below is the most we
+        // can do about that (there's no JS signal for "browser blocked this"
+        // to react to), and lastDownloadBatch below is the fallback: a free
+        // re-trigger of the same already-rendered files, no re-render needed.
+        if (cleaned.length > 1) multiNote.hidden = false;
+        const batch = [];
         for (let i = 0; i < cleaned.length; i++) {
           const renderingText = cleaned.length > 1
             ? "Rendering pill " + (i + 1) + " of " + cleaned.length + "..."
@@ -737,24 +773,28 @@
             renderingText,
             signal
           );
-          const fallback = pill.username + " Pill." + fileType;
-          triggerDownload(blob, filename || fallback);
+          const finalName = filename || pill.username + " Pill." + fileType;
+          batch.push({ blob, filename: finalName });
+          triggerDownload(blob, finalName);
           // A small gap between triggered downloads - firing several a.click()
           // downloads back to back in the same tick is what makes browsers
           // treat them as popup-style spam and block the later ones.
           if (i < cleaned.length - 1) await new Promise((r) => setTimeout(r, 400));
         }
+        lastDownloadBatch = batch;
         status.textContent = cleaned.length > 1
           ? "Downloaded " + cleaned.length + " files"
-          : "Downloaded " + (cleaned[0].username + " Pill." + fileType);
+          : "Downloaded " + batch[0].filename;
       }
       status.className = "status success";
+      document.getElementById("redownloadRow").hidden = false;
     } catch (err) {
       status.textContent = err.name === "AbortError" ? "Cancelled." : (err.message || "Something went wrong.");
       status.className = err.name === "AbortError" ? "status" : "status error";
     } finally {
       btn.disabled = false;
       cancelBtn.hidden = true;
+      multiNote.hidden = true;
       activeController = null;
     }
   });
