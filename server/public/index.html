@@ -254,6 +254,16 @@
   .status { margin-top: 16px; font-size: 14px; color: #adadb8; text-align: right; min-height: 20px; }
   .status.error { color: #ff6b6b; }
   .status.success { color: #63e6be; }
+  .status-inline-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .status-inline-link:hover { color: #9146FF; }
 
   .server-status { font-size: 13px; color: #f0b429; text-align: right; margin-bottom: 8px; }
   .multi-download-note { font-size: 13px; color: #71a5d6; text-align: right; margin-top: 8px; }
@@ -302,9 +312,6 @@
     </div>
     <div class="multi-download-note" id="multiDownloadNote" hidden>Your browser may ask to allow multiple downloads - click Allow to get all of them.</div>
     <div class="status" id="status"></div>
-    <div class="list-actions" id="redownloadRow" hidden>
-      <button class="text-link-btn" id="redownloadBtn">Download again</button>
-    </div>
   </div>
 
   <!-- hidden measurer used to auto-size each pill input as you type -->
@@ -624,9 +631,20 @@
     }
   }
 
-  document.getElementById("redownloadBtn").addEventListener("click", () => {
-    if (lastDownloadBatch) triggerDownloadBatch(lastDownloadBatch);
-  });
+  // Success status text with a "Download again" link built into the sentence
+  // itself, rather than a separate button - clicking it just re-offers the
+  // same already-rendered blobs (no server round-trip).
+  function showDownloadedStatus(statusEl, baseText) {
+    statusEl.textContent = baseText + " ";
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "status-inline-link";
+    link.textContent = "Download again";
+    link.addEventListener("click", () => {
+      if (lastDownloadBatch) triggerDownloadBatch(lastDownloadBatch);
+    });
+    statusEl.appendChild(link);
+  }
 
   // Idle check: only matters (and only shown) while nobody has clicked Download
   // yet - once a render is in flight, renderRequestWithQueueStatus below takes
@@ -733,7 +751,6 @@
     activeController = new AbortController();
     const signal = activeController.signal;
     status.className = "status";
-    document.getElementById("redownloadRow").hidden = true;
     lastDownloadBatch = null;
     const multiNote = document.getElementById("multiDownloadNote");
 
@@ -750,7 +767,7 @@
         const finalName = filename || fallback;
         triggerDownload(blob, finalName);
         lastDownloadBatch = [{ blob, filename: finalName }];
-        status.textContent = "Downloaded " + finalName;
+        showDownloadedStatus(status, "Downloaded " + finalName + ".");
       } else {
         // Each pill is its own request/response/download - a plain file per
         // pill, no zip step, for the common small-batch case. Chrome (and
@@ -782,12 +799,12 @@
           if (i < cleaned.length - 1) await new Promise((r) => setTimeout(r, 400));
         }
         lastDownloadBatch = batch;
-        status.textContent = cleaned.length > 1
-          ? "Downloaded " + cleaned.length + " files"
-          : "Downloaded " + batch[0].filename;
+        const doneText = cleaned.length > 1
+          ? "Downloaded " + cleaned.length + " files."
+          : "Downloaded " + batch[0].filename + ".";
+        showDownloadedStatus(status, doneText);
       }
       status.className = "status success";
-      document.getElementById("redownloadRow").hidden = false;
     } catch (err) {
       status.textContent = err.name === "AbortError" ? "Cancelled." : (err.message || "Something went wrong.");
       status.className = err.name === "AbortError" ? "status" : "status error";
