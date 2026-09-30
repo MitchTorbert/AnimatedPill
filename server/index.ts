@@ -267,8 +267,16 @@ app.post("/api/render", async (req, res) => {
 
     const firstName = pills[0].username.replace(/^\/+/, "");
     const zipName = `${pills.length} Pills ${firstName}.zip`.replace(/[/\\?%*:|"<>]/g, "-");
+    // A raw non-ASCII filename= (e.g. Chinese characters) isn't valid in an HTTP
+    // header, so clients (and older ones especially) show it as "?????" - the
+    // filename*=UTF-8'' form is the actual filename, RFC 5987-encoded; filename=
+    // stays as an ASCII-safe fallback for the rare client that doesn't read it.
+    const zipNameAscii = zipName.replace(/[^\x20-\x7E]/g, "_");
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${zipNameAscii}"; filename*=UTF-8''${encodeURIComponent(zipName)}`
+    );
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.on("error", (err) => {
       console.error("Zip error", err);

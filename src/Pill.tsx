@@ -61,12 +61,31 @@ export function sample(arr: number[], frame: number): number {
 }
 
 let measureCanvas: HTMLCanvasElement | null = null;
-export function measureText(text: string): { width: number; ascent: number } {
+export function measureText(text: string): { width: number; ascent: number; descent: number } {
   if (!measureCanvas) measureCanvas = document.createElement("canvas");
   const ctx = measureCanvas.getContext("2d")!;
   ctx.font = `500 ${FONT_SIZE}px RoobertTWITCH`;
   const m = ctx.measureText(text);
-  return { width: m.width, ascent: m.actualBoundingBoxAscent };
+  return { width: m.width, ascent: m.actualBoundingBoxAscent, descent: m.actualBoundingBoxDescent };
+}
+
+// The 4px TEXT_VERTICAL_OFFSET below was calibrated by centering the ASCENT box
+// only (ignoring descent) against real Latin reference footage - correct there
+// because ordinary Latin text has near-zero descent (only a few letters like
+// g/y/p/q/j dip below the baseline at all). CJK characters break that
+// assumption: every glyph has substantial, structural descent (they're drawn to
+// fill the font's full em-square, not sit on top of the baseline the way Latin
+// caps do), so centering by ascent alone leaves CJK text sitting visibly low.
+// latinReferenceAscent is the ascent of a fixed, descender-free reference
+// string - i.e. what the calibration was actually measuring - so this formula
+// centers the true (ascent+descent) glyph box for any script while reducing to
+// the exact original formula whenever descent is ~0.
+let latinReferenceAscent: number | null = null;
+function getLatinReferenceAscent(): number {
+  if (latinReferenceAscent === null) {
+    latinReferenceAscent = measureText("HAMBURGEFONSTIV0123456789").ascent;
+  }
+  return latinReferenceAscent;
 }
 
 // Rest (fully-settled) pill height - constant regardless of username, matches the
@@ -119,7 +138,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
 
   const label = username;
   const textColor = contrastTextColor(colorHex);
-  const { ascent } = measureText(label);
+  const { ascent, descent } = measureText(label);
 
   // --- pill background: width scales from the measured curve; height/vertical
   // position are absolute and username-independent (constant across every
@@ -139,7 +158,11 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   // ascent-box (not the full ascent+descent box - descenders are meant to hang down
   // into the padding, not be centered for) lands centered instead.
   const TEXT_VERTICAL_OFFSET = 4;
-  const restBaselineY = restTextTopY + ascent + TEXT_VERTICAL_OFFSET; // top-edge is descender-independent, so this is stable
+  // See getLatinReferenceAscent above: centers the full (ascent+descent) glyph
+  // box, which is exactly the old restTextTopY + ascent + TEXT_VERTICAL_OFFSET
+  // for ordinary descender-free Latin text (descent ~ 0, ascent ~ reference).
+  const restBaselineY =
+    restTextTopY + TEXT_VERTICAL_OFFSET + getLatinReferenceAscent() / 2 + (ascent - descent) / 2;
   // Past the point where direct pixel tracking got too noisy to trust, continue the text's
   // OWN exit motion on its own pace rather than tying it to either pill edge - the measured
   // real data shows its per-frame delta accelerating ~1.75x each frame right up to that
