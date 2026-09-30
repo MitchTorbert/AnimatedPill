@@ -72,14 +72,27 @@ export function measureText(text: string): { width: number; ascent: number; desc
 // The 4px TEXT_VERTICAL_OFFSET below was calibrated by centering the ASCENT box
 // only (ignoring descent) against real Latin reference footage - correct there
 // because ordinary Latin text has near-zero descent (only a few letters like
-// g/y/p/q/j dip below the baseline at all). CJK characters break that
-// assumption: every glyph has substantial, structural descent (they're drawn to
-// fill the font's full em-square, not sit on top of the baseline the way Latin
-// caps do), so centering by ascent alone leaves CJK text sitting visibly low.
+// g/y/p/q/j dip below the baseline at all, and real usernames were measured
+// this way, descenders included - see getPillMetrics's caller). CJK characters
+// break that assumption: every glyph has substantial, structural descent
+// (they're drawn to fill the font's full em-square, not sit on top of the
+// baseline the way Latin caps do), so centering by ascent alone leaves CJK
+// text sitting visibly low. Applying descent-aware centering to Latin text
+// too, though, shifts any username with a descender (a "j", "y"...) upward
+// from its calibrated position - a real regression for the common case this
+// file was built around, not just a harmless generalization - so the fix
+// below only kicks in for text outside the Latin-script ranges the
+// calibration was actually measured against; plain-Latin usernames (English
+// or otherwise) are byte-for-byte the original formula.
+const LATIN_SCRIPT_RE = /^[\u0000-ɏḀ-ỿ -⁯₠-⃏]*$/;
+function isLatinScript(text: string): boolean {
+  return LATIN_SCRIPT_RE.test(text);
+}
+
 // latinReferenceAscent is the ascent of a fixed, descender-free reference
-// string - i.e. what the calibration was actually measuring - so this formula
-// centers the true (ascent+descent) glyph box for any script while reducing to
-// the exact original formula whenever descent is ~0.
+// string - i.e. what the calibration was actually measuring - so the
+// non-Latin formula below centers the true (ascent+descent) glyph box while
+// reducing to the exact original formula whenever descent is ~0.
 let latinReferenceAscent: number | null = null;
 function getLatinReferenceAscent(): number {
   if (latinReferenceAscent === null) {
@@ -158,11 +171,12 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
   // ascent-box (not the full ascent+descent box - descenders are meant to hang down
   // into the padding, not be centered for) lands centered instead.
   const TEXT_VERTICAL_OFFSET = 4;
-  // See getLatinReferenceAscent above: centers the full (ascent+descent) glyph
-  // box, which is exactly the old restTextTopY + ascent + TEXT_VERTICAL_OFFSET
-  // for ordinary descender-free Latin text (descent ~ 0, ascent ~ reference).
-  const restBaselineY =
-    restTextTopY + TEXT_VERTICAL_OFFSET + getLatinReferenceAscent() / 2 + (ascent - descent) / 2;
+  // See isLatinScript above: Latin text (any language) keeps the exact
+  // original, pixel-calibrated formula; only non-Latin scripts (CJK, etc.)
+  // get the newer descent-aware centering.
+  const restBaselineY = isLatinScript(label)
+    ? restTextTopY + ascent + TEXT_VERTICAL_OFFSET
+    : restTextTopY + TEXT_VERTICAL_OFFSET + getLatinReferenceAscent() / 2 + (ascent - descent) / 2;
   // Past the point where direct pixel tracking got too noisy to trust, continue the text's
   // OWN exit motion on its own pace rather than tying it to either pill edge - the measured
   // real data shows its per-frame delta accelerating ~1.75x each frame right up to that
