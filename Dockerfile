@@ -18,6 +18,15 @@ RUN apt-get update && apt-get install -y \
   libcups2 \
   && rm -rf /var/lib/apt/lists/*
 
+# Fonts for non-Latin usernames. Without these, Chrome has zero installed glyphs
+# for scripts like Chinese/Japanese/Korean and falls back to its built-in "Last
+# Resort" font - blank placeholder circles instead of the actual characters.
+RUN apt-get update && apt-get install -y \
+  fonts-noto-core \
+  fonts-noto-cjk \
+  fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
