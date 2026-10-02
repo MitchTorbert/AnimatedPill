@@ -22,6 +22,15 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const app = express();
+// Cloud Run puts exactly one proxy hop in front of us; needed so req.ip is the
+// real client (for the report rate limit) instead of Google's frontend.
+app.set("trust proxy", 1);
+// Header form of the <meta name="robots"> tag in each page - also covers the
+// fonts/images/API responses that can't carry a meta tag.
+app.use((_req, res, next) => {
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  next();
+});
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.static(path.join(projectRoot, "public")));
@@ -303,6 +312,127 @@ app.post("/api/render", async (req, res) => {
     finished = true;
     for (const t of tmpOutputs) fs.unlink(t, () => {});
   }
+});
+
+// --- Issue reports -> GitHub Issues ---------------------------------------
+// GITHUB_TOKEN is a PAT with Issues:write on GITHUB_REPO, injected from GCP
+// Secret Manager at deploy time. Without it the endpoint says so instead of
+// pretending the report was saved.
+const GITHUB_REPO = process.env.GITHUB_REPO || "space150/twitch-username-pills";
+const GITHUB_API_URL = process.env.GITHUB_API_URL || "https://api.github.com";
+const REPORT_TYPES: Record<string, { label: string; title: string }> = {
+  bug: { label: "bug", title: "Something's broken" },
+  idea: { label: "enhancement", title: "An idea or request" },
+  question: { label: "question", title: "A question" },
+};
+
+// No login means anyone can hit this, so cap it per IP. In-memory is fine:
+// the service is pinned to one instance (see deploy.yml --max-instances 1).
+const REPORT_LIMIT = 5;
+const REPORT_WINDOW_MS = 60 * 60 * 1000;
+const reportHits = new Map<string, number[]>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const recent = (reportHits.get(ip) ?? []).filter((t) => now - t < REPORT_WINDOW_MS);
+  if (recent.length >= REPORT_LIMIT) {
+    reportHits.set(ip, recent);
+    return true;
+  }
+  recent.push(now);
+  reportHits.set(ip, recent);
+  return false;
+}
+
+const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+// Defuses @mentions so a report can't ping people/teams from the GitHub side.
+const noMentions = (s: string) => s.replace(/@/g, "@​");
+
+app.post("/api/report", async (req, res) => {
+  const body = req.body ?? {};
+
+  // Hidden field real users never fill in; bots do. Pretend success.
+  if (str(body.website, 200)) {
+    res.json({ ok: true });
+    return;
+  }
+
+  const type = REPORT_TYPES[str(body.type, 20)];
+  const title = str(body.title, 120);
+  const description = str(body.description, 5000);
+  const name = str(body.name, 100);
+  const email = str(body.email, 200);
+  if (!type || !title || !description) {
+    res.status(400).json({ error: "Please add a title and a description." });
+    return;
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "That email address doesn't look right." });
+    return;
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.error("Report received but GITHUB_TOKEN is not configured");
+    res.status(503).json({ error: "Reporting isn't set up yet. Please contact the space150 team directly." });
+    return;
+  }
+
+  if (rateLimited(req.ip ?? "unknown")) {
+    res.status(429).json({ error: "Too many reports from your connection - please try again later." });
+    return;
+  }
+
+  const browser = typeof body.browser === "object" && body.browser !== null ? body.browser : {};
+  const browserLines = Object.entries(browser as Record<string, unknown>)
+    .slice(0, 12)
+    .map(([k, v]) => `- **${str(k, 40)}:** ${noMentions(str(v, 300))}`)
+    .join("\n");
+
+  const issueBody = [
+    `**Type:** ${type.title}`,
+    `**Reported by:** ${noMentions(name) || "_not given_"}`,
+    `**Email:** ${email || "_not given_"}`,
+    "",
+    "### What happened",
+    noMentions(description),
+    "",
+    "### Browser",
+    browserLines || "_not available_",
+    "",
+    "_Submitted via the in-app report form._",
+  ].join("\n");
+
+  try {
+    const ghRes = await fetch(`${GITHUB_API_URL}/repos/${GITHUB_REPO}/issues`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+        "User-Agent": "pill-generator-report",
+      },
+      body: JSON.stringify({
+        title: `[${type.label}] ${noMentions(title)}`,
+        body: issueBody,
+        labels: ["user-report", type.label],
+      }),
+    });
+    if (!ghRes.ok) {
+      console.error("GitHub issue creation failed", ghRes.status, await ghRes.text());
+      res.status(502).json({ error: "Couldn't send your report right now. Please try again later." });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("GitHub issue creation error", err);
+    res.status(502).json({ error: "Couldn't send your report right now. Please try again later." });
+  }
+});
+
+app.get("/report", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "report.html"));
 });
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4321;
