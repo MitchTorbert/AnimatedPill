@@ -30,7 +30,8 @@
 
   .pill-list { display: flex; flex-direction: column; align-items: center; gap: 28px; }
 
-  .pill-editor { position: relative; display: flex; align-items: center; gap: 14px; }
+  /* margin-bottom leaves room for the "Twitch shows this as..." line that can appear under a pill. */
+  .pill-editor { position: relative; display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
   .ambassador-toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: #adadb8; cursor: pointer; white-space: nowrap; }
   .ambassador-toggle input { cursor: pointer; width: 20px; height: 20px; }
   .ambassador-toggle:hover { color: #dedee3; }
@@ -65,6 +66,31 @@
   }
   .pill-shape input::placeholder { opacity: 0.45; }
   .pill-hint { pointer-events: none; white-space: nowrap; margin-left: 2px; }
+
+  .name-suggest {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    margin-top: 6px;
+    text-align: center;
+    font-size: 13px;
+    color: #adadb8;
+    white-space: nowrap;
+  }
+  .name-suggest strong { color: #efeff1; font-weight: 600; }
+  .name-suggest button {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 8px;
+    font: inherit;
+    color: #bf94ff;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .name-suggest button:hover { color: #fff; }
+  .name-suggest .dismiss { text-decoration: none; color: #6b6b76; }
 
   .color-picker-wrap { position: relative; flex-shrink: 0; }
 
@@ -433,6 +459,53 @@
     container.appendChild(applyAllBtn);
   }
 
+  // --- Twitch lookups ---------------------------------------------------------
+  // The leading "/" (and any stray spaces) aren't part of the channel name.
+  const handleOf = (username) => username.replace(/^\/+/, "").trim();
+  const LOGIN_RE = /^[A-Za-z0-9_]{3,25}$/;
+
+  let ambassadorLogins = new Set();
+  async function loadAmbassadors() {
+    try {
+      const res = await fetch("/api/ambassadors");
+      ambassadorLogins = new Set((await res.json()).logins);
+    } catch {
+      // Without the list the box just stays a manual tick, same as before.
+    }
+  }
+
+  // Ticks the Ambassador box when the typed name is on the list. It only
+  // un-ticks a box it ticked itself (so a manual tick sticks), and a manual
+  // un-tick is remembered for that name so it isn't ticked again underneath you.
+  function syncAmbassador(pill, toggleInput) {
+    const key = handleOf(pill.username).toLowerCase();
+    if (ambassadorLogins.has(key)) {
+      if (pill.ambassadorOptOut !== key) {
+        pill.ambassador = true;
+        pill.autoAmbassador = true;
+      }
+    } else if (pill.autoAmbassador) {
+      pill.ambassador = false;
+      pill.autoAmbassador = false;
+    }
+    toggleInput.checked = !!pill.ambassador;
+  }
+
+  const displayNameCache = new Map(); // lowercased login -> real display name, or null
+  async function fetchDisplayName(handle) {
+    const key = handle.toLowerCase();
+    if (displayNameCache.has(key)) return displayNameCache.get(key);
+    try {
+      const res = await fetch("/api/twitch-name?login=" + encodeURIComponent(handle));
+      if (!res.ok) return null;
+      const name = (await res.json()).displayName || null;
+      displayNameCache.set(key, name);
+      return name;
+    } catch {
+      return null;
+    }
+  }
+
   function renderPillList() {
     const list = document.getElementById("pillList");
     list.innerHTML = "";
@@ -474,10 +547,73 @@
       shape.addEventListener("click", () => input.focus());
       editor.appendChild(shape);
 
+      // "Twitch spells this IShowSpeed" line, under the pill.
+      const suggestEl = document.createElement("div");
+      suggestEl.className = "name-suggest";
+      shape.appendChild(suggestEl);
+
+      const renderSuggestion = () => {
+        suggestEl.textContent = "";
+        suggestEl.hidden = !pill.suggestion;
+        if (!pill.suggestion) return;
+        suggestEl.append("Twitch shows this as ");
+        const strong = document.createElement("strong");
+        strong.textContent = pill.suggestion;
+        suggestEl.appendChild(strong);
+
+        const useBtn = document.createElement("button");
+        useBtn.type = "button";
+        useBtn.textContent = "Use it";
+        useBtn.addEventListener("click", () => {
+          const prefix = pill.username.match(/^\/*/)[0];
+          pill.username = prefix + pill.suggestion;
+          input.value = pill.username;
+          input.style.width = Math.max(20, measureWidth(input.value) + WIDTH_BUFFER) + "px";
+          pill.suggestion = null;
+          renderSuggestion();
+          input.focus();
+        });
+        const dismissBtn = document.createElement("button");
+        dismissBtn.type = "button";
+        dismissBtn.className = "dismiss";
+        dismissBtn.textContent = "✕";
+        dismissBtn.title = "Keep it as typed";
+        dismissBtn.addEventListener("click", () => {
+          pill.dismissedSuggestionFor = handleOf(pill.username).toLowerCase();
+          pill.suggestion = null;
+          renderSuggestion();
+        });
+        suggestEl.appendChild(useBtn);
+        suggestEl.appendChild(dismissBtn);
+      };
+      renderSuggestion();
+
+      let nameCheckTimer = null;
+      const checkName = async () => {
+        const handle = handleOf(pill.username);
+        let suggestion = null;
+        if (LOGIN_RE.test(handle) && pill.dismissedSuggestionFor !== handle.toLowerCase()) {
+          const real = await fetchDisplayName(handle);
+          // Typing may have moved on while Twitch was answering.
+          if (handleOf(pill.username) !== handle) return;
+          // Twitch only allows a display name to differ from the login by case
+          // (or by swapping in non-Latin characters) - only the case-only
+          // difference is a spelling fix, so only that gets suggested.
+          if (real && real !== handle && real.toLowerCase() === handle.toLowerCase()) suggestion = real;
+        }
+        pill.suggestion = suggestion;
+        renderSuggestion();
+      };
+
       input.addEventListener("input", () => {
         pill.username = input.value;
         input.style.width = Math.max(20, measureWidth(input.value || "username") + WIDTH_BUFFER) + "px";
         updateHint();
+        syncAmbassador(pill, toggleInput);
+        pill.suggestion = null;
+        renderSuggestion();
+        clearTimeout(nameCheckTimer);
+        nameCheckTimer = setTimeout(checkName, 500);
       });
       input.addEventListener("keydown", (e) => {
         if (e.key !== "Enter") return;
@@ -529,6 +665,8 @@
       toggleInput.checked = !!pill.ambassador;
       toggleInput.addEventListener("change", () => {
         pill.ambassador = toggleInput.checked;
+        pill.autoAmbassador = false;
+        pill.ambassadorOptOut = toggleInput.checked ? null : handleOf(pill.username).toLowerCase();
       });
       toggleLabel.appendChild(toggleInput);
       toggleLabel.appendChild(document.createTextNode("Ambassador"));
@@ -603,6 +741,7 @@
     // sizing the input too narrow and clipping the glyph horizontally until
     // typing triggers a fresh (by-then-correct) measurement.
     await document.fonts.load('500 57px "RoobertTWITCH"').catch(() => {});
+    await loadAmbassadors();
     renderPillList();
   }
 

@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 import { BRAND_COLOR_GROUPS } from "../src/colors";
+import { getAmbassadorLogins, startAmbassadorRefresh, lookupDisplayName, LOGIN_RE } from "./twitch";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -107,6 +108,34 @@ function enqueueRender<T>(task: () => Promise<T>): Promise<T> {
 
 app.get("/api/status", (_req, res) => {
   res.json({ busy: queueLength > 0, queueLength });
+});
+
+app.get("/api/ambassadors", (_req, res) => {
+  res.json({ logins: getAmbassadorLogins() });
+});
+
+// Each keystroke pause on the page can trigger one of these, and it's an open
+// endpoint that fans out to Twitch - so cap it per IP like /api/report.
+const NAME_LOOKUP_LIMIT = 60;
+const nameLookupHits = new Map<string, number[]>();
+
+app.get("/api/twitch-name", async (req, res) => {
+  const login = typeof req.query.login === "string" ? req.query.login : "";
+  if (!LOGIN_RE.test(login)) {
+    res.json({ displayName: null });
+    return;
+  }
+  const ip = req.ip ?? "unknown";
+  const now = Date.now();
+  const recent = (nameLookupHits.get(ip) ?? []).filter((t) => now - t < 60 * 1000);
+  if (recent.length >= NAME_LOOKUP_LIMIT) {
+    nameLookupHits.set(ip, recent);
+    res.status(429).json({ displayName: null });
+    return;
+  }
+  recent.push(now);
+  nameLookupHits.set(ip, recent);
+  res.json({ displayName: await lookupDisplayName(login) });
 });
 
 const ALLOWED_FPS = [23.976, 30, 60];
@@ -436,6 +465,7 @@ app.get("/report", (_req, res) => {
 });
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4321;
+startAmbassadorRefresh();
 app.listen(PORT, () => {
   console.log(`Pill generator running at http://localhost:${PORT}`);
 });
