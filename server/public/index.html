@@ -278,6 +278,20 @@
   }
   button.cancel-render:hover { border-color: #ff6b6b; color: #ff6b6b; }
 
+  .whats-new { margin-top: 44px; font-size: 13px; color: #adadb8; text-align: center; }
+  .whats-new .new-tag {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #9146FF;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .whats-new:not([hidden]) + .credit { margin-top: 12px; }
   .credit { margin-top: 48px; font-size: 12px; color: #6b6b76; text-align: center; }
   .credit a { color: inherit; text-decoration: none; }
   .credit a:hover { color: #adadb8; text-decoration: underline; }
@@ -342,6 +356,7 @@
     </div>
     <div class="multi-download-note" id="multiDownloadNote" hidden>Your browser may ask to allow multiple downloads - click Allow to get all of them.</div>
     <div class="status" id="status"></div>
+    <div class="whats-new" id="whatsNew" hidden><span class="new-tag">New</span>Ambassador box ticks itself &middot; Spelling check against Twitch &middot; Non-Latin names (Chinese, etc.)</div>
     <div class="credit">Made by <a href="https://www.space150.com/" target="_blank" rel="noopener">space150</a> &middot; <a href="/report">Report an issue</a></div>
   </div>
 
@@ -458,6 +473,13 @@
     });
     container.appendChild(applyAllBtn);
   }
+
+  // The "New" line in the footer shows itself until this date, then stays hidden.
+  const WHATS_NEW_UNTIL = Date.parse("2026-10-27T23:59:59-05:00");
+  function updateWhatsNew(now) {
+    document.getElementById("whatsNew").hidden = now > WHATS_NEW_UNTIL;
+  }
+  updateWhatsNew(Date.now());
 
   // --- Twitch lookups ---------------------------------------------------------
   // The leading "/" (and any stray spaces) aren't part of the channel name.
