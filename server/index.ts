@@ -335,7 +335,22 @@ app.post("/api/render", async (req, res) => {
     if (!res.headersSent && !res.writableEnded) {
       const message =
         err instanceof Error && err.message === "Render timed out" ? err.message : "Render failed. Check server logs.";
-      res.status(500).json({ error: message });
+      // TEMPORARY DIAGNOSTIC: surfaces the real error + container memory counters.
+      const cg = (f: string) => {
+        try {
+          return fs.readFileSync("/sys/fs/cgroup/" + f, "utf8").trim().replace(/\n/g, ";");
+        } catch {
+          return "n/a";
+        }
+      };
+      const detail = {
+        err: String(err instanceof Error ? err.message : err).slice(0, 600),
+        memCurrent: cg("memory.current"),
+        memMax: cg("memory.max"),
+        memPeak: cg("memory.peak"),
+        memEvents: cg("memory.events"),
+      };
+      res.status(500).json({ error: message, detail });
     }
   } finally {
     finished = true;
