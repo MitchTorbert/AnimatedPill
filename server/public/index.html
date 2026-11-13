@@ -371,7 +371,14 @@
   let nextId = 2;
   let openPopoverId = null;
 
+  // A gradient swatch ("gradient:...") carries its own CSS fill and fixed text
+  // color; everything else is a plain #RRGGBB.
+  const swatchOf = (value) => colors.find((c) => c.hex === value && c.css);
+  const fillOf = (value) => (swatchOf(value) ? swatchOf(value).css : value);
+
   function contrastTextColor(hex) {
+    const fixed = swatchOf(hex) && swatchOf(hex).textColor;
+    if (fixed) return fixed;
     const c = hex.replace("#", "");
     const r = parseInt(c.substring(0, 2), 16) / 255;
     const g = parseInt(c.substring(2, 4), 16) / 255;
@@ -420,8 +427,8 @@
       group.colors.forEach((c) => {
         const sw = document.createElement("div");
         sw.className = "popover-swatch" + (c.hex === pill.colorHex ? " selected" : "");
-        sw.style.background = c.hex;
-        sw.title = c.name + " " + c.hex;
+        sw.style.background = c.css || c.hex;
+        sw.title = c.css ? c.name : c.name + " " + c.hex;
         sw.addEventListener("click", () => {
           pill.colorHex = c.hex;
           closePopover();
@@ -538,7 +545,7 @@
 
       const shape = document.createElement("div");
       shape.className = "pill-shape";
-      shape.style.background = pill.colorHex;
+      shape.style.background = fillOf(pill.colorHex);
 
       // The leading "/" lives directly in the input's own value (not a fixed
       // decoration beside it) - normal, deletable text, since a pill occasionally
@@ -561,7 +568,8 @@
       const hint = document.createElement("span");
       hint.className = "pill-hint";
       hint.textContent = "username";
-      hint.style.color = contrastTextColor(pill.colorHex) === "#000000" ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.4)";
+      const hintText = contrastTextColor(pill.colorHex);
+      hint.style.color = hintText === "#FFFFFF" ? "rgba(255,255,255,0.4)" : hintText === "#000000" ? "rgba(0,0,0,0.35)" : "rgba(14,24,38,0.45)";
       const updateHint = () => { hint.hidden = pill.username !== "/"; };
       updateHint();
       shape.appendChild(input);
@@ -651,7 +659,7 @@
 
       const circle = document.createElement("button");
       circle.className = "color-circle";
-      circle.style.background = pill.colorHex;
+      circle.style.background = fillOf(pill.colorHex);
       circle.addEventListener("click", (e) => {
         e.stopPropagation();
         const isOpen = openPopoverId === pill.id;

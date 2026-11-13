@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from "remotion";
-import { contrastTextColor } from "./colors";
+import { contrastTextColor, fillBackground } from "./colors";
 import motion from "./pill-motion.json";
 
 export interface PillProps {
@@ -210,7 +210,7 @@ export const Pill: React.FC<PillProps> = ({ username, colorHex, centerXOverride 
           width: curWidth,
           height: curHeight,
           borderRadius: curHeight / 2,
-          background: colorHex,
+          background: fillBackground(colorHex),
         }}
       />
 

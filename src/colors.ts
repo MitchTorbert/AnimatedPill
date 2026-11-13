@@ -1,6 +1,10 @@
 export interface BrandColor {
   name: string;
+  // A plain "#RRGGBB", or "gradient:<id>" for a swatch that carries its own
+  // CSS fill (css) and a fixed text color (textColor).
   hex: string;
+  css?: string;
+  textColor?: string;
 }
 
 export interface BrandColorGroup {
@@ -88,10 +92,42 @@ export const BRAND_COLOR_GROUPS: BrandColorGroup[] = [
   },
 ];
 
+// Metallic gold from the Streamer Awards palette (the "logo" gradient), left to
+// right. Stop positions are matched by eye to the Illustrator gradient, so
+// nudge the percentages here if the banding should shift.
+const STREAMER_AWARDS_CSS =
+  "linear-gradient(90deg, #EFE471 0%, #E8DC72 6%, #E5D974 12%, #9F8123 20%, #FEF99C 62%, #FFFCA6 71%, #95742D 92%, #A08340 100%)";
+
+BRAND_COLOR_GROUPS.push({
+  label: "Gradients",
+  colors: [
+    {
+      name: "Streamer Awards",
+      hex: "gradient:streamer-awards",
+      css: STREAMER_AWARDS_CSS,
+      textColor: "#0E1826",
+    },
+  ],
+});
+
 export const BRAND_COLORS: BrandColor[] = BRAND_COLOR_GROUPS.flatMap((g) => g.colors);
 
+const swatchFor = (value: string) => BRAND_COLORS.find((c) => c.hex === value && c.css);
+
+// What a pill's colorHex is accepted as: a plain hex, or a known gradient swatch.
+export function isValidFill(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value) || !!swatchFor(value);
+}
+
+// The CSS `background` for a pill's colorHex.
+export function fillBackground(value: string): string {
+  return swatchFor(value)?.css ?? value;
+}
+
 // WCAG relative luminance - picks black or white text for max contrast on a given bg color
-export function contrastTextColor(hex: string): "#000000" | "#FFFFFF" {
+export function contrastTextColor(hex: string): string {
+  const fixed = swatchFor(hex)?.textColor;
+  if (fixed) return fixed;
   const c = hex.replace("#", "");
   const r = parseInt(c.substring(0, 2), 16) / 255;
   const g = parseInt(c.substring(2, 4), 16) / 255;

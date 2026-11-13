@@ -6,7 +6,7 @@ import archiver from "archiver";
 import { fileURLToPath } from "url";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
-import { BRAND_COLOR_GROUPS } from "../src/colors";
+import { BRAND_COLOR_GROUPS, isValidFill } from "../src/colors";
 import { getAmbassadorLogins, startAmbassadorRefresh, lookupDisplayName, LOGIN_RE } from "./twitch";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -152,7 +152,7 @@ function validatePill(p: unknown): PillRequest | null {
   if (typeof p !== "object" || p === null) return null;
   const { username, colorHex, ambassador } = p as Record<string, unknown>;
   if (typeof username !== "string" || !username.trim()) return null;
-  if (typeof colorHex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) return null;
+  if (typeof colorHex !== "string" || !isValidFill(colorHex)) return null;
   return {
     // Rendered exactly as typed now - the leading "/" is normal, deletable text in
     // the client's input, not something this trims and Pill.tsx adds back.
