@@ -93,10 +93,10 @@ export const BRAND_COLOR_GROUPS: BrandColorGroup[] = [
 ];
 
 // Metallic gold from the Streamer Awards palette (the "logo" gradient), left to
-// right. Stop positions are matched by eye to the Illustrator gradient, so
+// right, tilted 30 degrees (CSS 60deg = Illustrator's 30deg). Stop positions are matched by eye to the Illustrator gradient, so
 // nudge the percentages here if the banding should shift.
 const STREAMER_AWARDS_CSS =
-  "linear-gradient(90deg, #EFE471 0%, #E8DC72 6%, #E5D974 12%, #9F8123 20%, #FEF99C 62%, #FFFCA6 71%, #95742D 92%, #A08340 100%)";
+  "linear-gradient(60deg, #EFE471 0%, #E8DC72 6%, #E5D974 12%, #9F8123 20%, #FEF99C 62%, #FFFCA6 71%, #95742D 92%, #A08340 100%)";
 
 BRAND_COLOR_GROUPS.push({
   label: "Gradients",
