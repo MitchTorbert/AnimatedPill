@@ -98,6 +98,10 @@ export const BRAND_COLOR_GROUPS: BrandColorGroup[] = [
 const STREAMER_AWARDS_CSS =
   "linear-gradient(60deg, #EFE471 0%, #E8DC72 6%, #E5D974 12%, #9F8123 20%, #FEF99C 62%, #FFFCA6 71%, #95742D 92%, #A08340 100%)";
 
+// Brand blue -> pink -> yellow (#1E69FF, #FA1ED2, #FDB210), tipped 20 degrees
+// downward (Illustrator -20deg = CSS 110deg).
+const BLUE_PINK_YELLOW_CSS = "linear-gradient(110deg, #1E69FF 0%, #FA1ED2 50%, #FDB210 100%)";
+
 BRAND_COLOR_GROUPS.push({
   label: "Gradients",
   colors: [
@@ -106,6 +110,12 @@ BRAND_COLOR_GROUPS.push({
       hex: "gradient:streamer-awards",
       css: STREAMER_AWARDS_CSS,
       textColor: "#0E1826",
+    },
+    {
+      name: "Blue Pink Yellow",
+      hex: "gradient:blue-pink-yellow",
+      css: BLUE_PINK_YELLOW_CSS,
+      textColor: "#FFFFFF",
     },
   ],
 });
